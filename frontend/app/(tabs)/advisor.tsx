@@ -27,6 +27,7 @@ import { colors, spacing, radius, fonts, formatINR } from "@/src/theme";
 import { apiGet, apiPost, apiDelete } from "@/src/api";
 import { getLang } from "@/src/i18n";
 import { useRouter } from "expo-router";
+import Saathi from "@/src/components/Saathi";
 
 type Msg = { role: "user" | "assistant"; content: string; structured?: any; ts?: number };
 
@@ -212,8 +213,15 @@ export default function Advisor() {
             );
           }}
           ListEmptyComponent={
-            <View style={{ paddingTop: 8 }}>
-              <Text style={styles.emptyLabel}>
+            <View style={{ paddingTop: 8, alignItems: "center" }}>
+              <Saathi
+                expression="explaining"
+                size={100}
+                message={mode === "strategy"
+                  ? "Tell me your funding goal and I'll build a complete roadmap!"
+                  : "Hi! I'm Saathi. Ask me anything about funding."}
+              />
+              <Text style={[styles.emptyLabel, { marginTop: 16 }]}>
                 {mode === "strategy"
                   ? "Describe your funding goal to get a complete roadmap"
                   : "Try asking…"}
