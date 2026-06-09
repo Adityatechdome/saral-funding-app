@@ -10,26 +10,30 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   Users, Landmark, Phone, Target, Bell, BarChart3,
-  TrendingUp, MessageSquare, ChevronRight
+  TrendingUp, MessageSquare, ChevronRight, Percent, Eye, Settings,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiGet } from "@/src/api";
 import { BackBar } from "@/src/components/StepBar";
 import { SkeletonBox } from "@/src/components/SkeletonLoader";
+import { canAccess } from "./_layout";
 
 type Overview = {
   total_users: number; total_admins: number; total_schemes: number;
-  total_consultations: number; total_leads: number; total_chats: number; daily_active_users: number;
+  total_consultations: number; total_leads: number; total_chats: number;
+  daily_active_users: number; conversion_rate: number;
+  scheme_views: number; bank_recommendation_views: number;
 };
 
-const MODULES = [
+const ALL_MODULES = [
   { id: "users", label: "Users", sub: "Manage & export", Icon: Users, color: colors.primarySoft, iconColor: colors.primaryDark },
   { id: "schemes", label: "Schemes", sub: "Create & manage", Icon: Landmark, color: "#DBEAFE", iconColor: "#1D4ED8" },
   { id: "consultations", label: "Consultations", sub: "Track & update", Icon: Phone, color: "#EDE9FE", iconColor: "#5B21B6" },
   { id: "leads", label: "CRM / Leads", sub: "Pipeline & stages", Icon: Target, color: "#FEF3C7", iconColor: "#92400E" },
   { id: "notifications", label: "Notifications", sub: "Broadcast messages", Icon: Bell, color: "#FEE2E2", iconColor: "#DC2626" },
   { id: "analytics", label: "Analytics", sub: "Trends & insights", Icon: BarChart3, color: colors.surfaceAlt, iconColor: colors.textMuted },
+  { id: "settings", label: "Settings", sub: "App configuration", Icon: Settings, color: "#F5F3FF", iconColor: "#6D28D9" },
 ];
 
 function StatCard({ label, value, Icon, color, iconColor }: { label: string; value: string; Icon: any; color: string; iconColor: string }) {
@@ -67,14 +71,22 @@ export default function AdminHome() {
   const router = useRouter();
   const [o, setO] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState<string>("super_admin");
 
   useFocusEffect(
     useCallback(() => {
-      apiGet<Overview>("/admin/overview")
-        .then((d) => { setO(d); setLoading(false); })
-        .catch(() => setLoading(false));
+      Promise.all([
+        apiGet<Overview>("/admin/overview"),
+        apiGet<any>("/auth/me"),
+      ]).then(([overview, me]) => {
+        setO(overview);
+        setUserRole(me?.role ?? "super_admin");
+        setLoading(false);
+      }).catch(() => setLoading(false));
     }, [])
   );
+
+  const visibleModules = ALL_MODULES.filter((m) => canAccess(userRole, m.id));
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface2 }} edges={["top", "bottom"]} testID="admin-home">
@@ -85,7 +97,7 @@ export default function AdminHome() {
         <Text style={styles.sectionLabel}>Overview</Text>
         {loading ? (
           <View style={styles.statsGrid}>
-            {[0, 1, 2, 3, 4, 5].map((i) => (
+            {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
               <SkeletonBox key={i} width="31%" height={90} borderRadius={radius.xl} />
             ))}
           </View>
@@ -97,13 +109,22 @@ export default function AdminHome() {
             <StatCard label="Consultations" value={String(o?.total_consultations ?? 0)} Icon={Phone} color="#FEF3C7" iconColor="#92400E" />
             <StatCard label="Leads" value={String(o?.total_leads ?? 0)} Icon={Target} color="#FEE2E2" iconColor="#DC2626" />
             <StatCard label="Schemes" value={String(o?.total_schemes ?? 0)} Icon={Landmark} color={colors.surfaceAlt} iconColor={colors.textMuted} />
+            <StatCard label="Conversion" value={`${o?.conversion_rate ?? 0}%`} Icon={Percent} color="#F0FDF4" iconColor="#15803D" />
+            <StatCard label="Scheme Views" value={String(o?.scheme_views ?? 0)} Icon={Eye} color="#FFF7ED" iconColor="#C2410C" />
           </View>
         )}
 
+        {/* Role badge */}
+        <View style={styles.roleBadgeRow}>
+          <View style={styles.roleBadge}>
+            <Text style={styles.roleBadgeText}>Role: {userRole.replace("_", " ").toUpperCase()}</Text>
+          </View>
+        </View>
+
         {/* Modules */}
-        <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Modules</Text>
+        <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Modules</Text>
         <View style={styles.modulesGrid}>
-          {MODULES.map((m) => (
+          {visibleModules.map((m) => (
             <TouchableOpacity
               key={m.id}
               testID={`admin-nav-${m.id}`}
@@ -141,6 +162,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+  },
+  roleBadgeRow: {
+    marginTop: 12,
+    flexDirection: "row",
+  },
+  roleBadge: {
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  roleBadgeText: {
+    fontSize: 11,
+    fontFamily: fonts.bold,
+    color: colors.primaryDark,
+    letterSpacing: 0.4,
   },
   modulesGrid: {
     gap: 8,

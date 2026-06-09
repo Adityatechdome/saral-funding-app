@@ -42,6 +42,10 @@ export default function AdminLeads() {
   const [editing, setEditing] = useState<any>(null);
   const [notes, setNotes] = useState("");
 
+  const openDetail = (lead: any) => {
+    router.push(`/admin/lead/${lead.id}` as any);
+  };
+
   const load = async (st: string) => {
     setLoading(true);
     try {
@@ -126,7 +130,8 @@ export default function AdminLeads() {
             <TouchableOpacity
               testID={`lead-${item.id}`}
               style={styles.card}
-              onPress={() => openEdit(item)}
+              onPress={() => openDetail(item)}
+              onLongPress={() => openEdit(item)}
               activeOpacity={0.85}
             >
               {/* Header */}

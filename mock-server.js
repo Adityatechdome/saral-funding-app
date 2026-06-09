@@ -23,7 +23,7 @@ const DEMO_USER = {
   age: 32,
   category: "General",
   onboarding_step: "done",
-  role: "user",
+  role: "super_admin",
 };
 
 const SCHEMES = [
@@ -364,10 +364,22 @@ async function handle(req, res) {
     return json(res, 200, {
       score: 68,
       max: 100,
+      score_label: "Good",
+      funding_capacity: { min: 500000, max: 5000000 },
+      approval_probability: 72,
+      breakdown: [
+        { label: "Profile completion", score: 15, max: 15 },
+        { label: "Business profile", score: 15, max: 15 },
+        { label: "GST registration", score: 15, max: 15 },
+        { label: "Udyam registration", score: 0, max: 15 },
+        { label: "Business vintage & turnover", score: 14, max: 20 },
+        { label: "Assessment complete", score: 10, max: 10 },
+        { label: "Documentation readiness", score: 8, max: 10 },
+      ],
       actions: [
-        { title: "Get Udyam Registration", detail: "Unlocks 8 more schemes including CGTMSE collateral-free loans up to ₹5 crore.", weight: "High" },
-        { title: "Complete Funding Assessment", detail: "Provide more details about your funding requirement to improve match accuracy.", weight: "Medium" },
-        { title: "Maintain GST Compliance", detail: "Regular GST filing keeps you eligible for ECLGS emergency loans.", weight: "Medium" },
+        { title: "Get Udyam Registration", detail: "Free, takes 10 minutes at udyamregistration.gov.in. Required for CGTMSE and most MSME subsidies.", weight: "+15", cta: "udyam", priority: "high" },
+        { title: "Build turnover history", detail: "₹10L+ annual turnover unlocks unsecured loans from private banks.", weight: "+6", cta: "business", priority: "medium" },
+        { title: "Prepare core documents", detail: "PAN, Aadhaar, GST/Udyam certificate, last 6 months bank statements, ITR.", weight: "+2", cta: "documents", priority: "medium" },
       ],
     });
   }

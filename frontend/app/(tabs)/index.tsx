@@ -124,7 +124,12 @@ export default function Dashboard() {
         </View>
 
         {/* ── Readiness Hero Card ── */}
-        <View style={styles.heroCard} testID="readiness-card">
+        <TouchableOpacity
+          style={styles.heroCard}
+          testID="readiness-card"
+          onPress={() => router.push("/readiness")}
+          activeOpacity={0.92}
+        >
           <Text style={styles.heroLabel}>Funding Readiness Score</Text>
 
           <View style={styles.heroInner}>
@@ -150,9 +155,10 @@ export default function Dashboard() {
               <Text style={styles.heroCtaText}>
                 {readiness.actions.length} action{readiness.actions.length > 1 ? "s" : ""} to improve your score
               </Text>
+              <ChevronRight size={12} color="rgba(255,255,255,0.7)" strokeWidth={2} style={{ marginLeft: "auto" }} />
             </View>
           )}
-        </View>
+        </TouchableOpacity>
 
         <View style={{ paddingHorizontal: spacing.md }}>
 

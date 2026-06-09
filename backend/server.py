@@ -18,7 +18,7 @@ from ai_service import advisor_chat, match_schemes_with_llm, advisor_structured
 from bank_service import recommend_banks
 from readiness_service import compute_readiness
 from alerts_service import evaluate_alerts
-from analytics_service import compute_overview, popular_schemes, state_distribution, consultation_status, lead_pipeline
+from analytics_service import compute_overview, popular_schemes, state_distribution, consultation_status, lead_pipeline, daily_user_trend, consultation_trend
 from auth_service import verify_firebase_id_token, is_enabled as firebase_enabled
 
 # ---- DB ----
@@ -666,13 +666,80 @@ async def admin_list_leads(
     return items  # return flat array for backwards compatibility with frontend
 
 
+@api_router.get("/admin/leads/{lid}")
+async def admin_get_lead(lid: str, admin=Depends(require_admin)):
+    lead = await db.leads.find_one({"id": lid}, {"_id": 0})
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    # Enrich with user + business profile + consultations
+    uid = lead.get("user_id")
+    user = await db.users.find_one({"id": uid}, {"_id": 0}) or {}
+    bp = await db.business_profiles.find_one({"user_id": uid}, {"_id": 0}) or {}
+    fa = await db.funding_assessments.find_one({"user_id": uid}, {"_id": 0}) or {}
+    matches = await db.scheme_matches.find_one({"user_id": uid}, {"_id": 0}) or {}
+    consultations = await db.consultations.find({"user_id": uid}, {"_id": 0}).sort("created_at", -1).to_list(20)
+    return {
+        **lead,
+        "user": user,
+        "business_profile": bp,
+        "assessment": fa,
+        "scheme_matches": matches.get("matches", []),
+        "consultations": consultations,
+    }
+
+
 @api_router.post("/admin/leads/{lid}")
 async def admin_update_lead(lid: str, body: LeadUpdate, admin=Depends(require_admin)):
+    lead = await db.leads.find_one({"id": lid}, {"_id": 0, "stage": 1, "activity_log": 1})
     update = {k: v for k, v in body.dict().items() if v is not None}
     if "stage" in update and update["stage"] not in LEAD_STAGES:
         raise HTTPException(status_code=400, detail="Invalid lead stage")
     update["updated_at"] = now_iso()
-    await db.leads.update_one({"id": lid}, {"$set": update})
+
+    # Build activity log entry
+    activity_entry: Dict[str, Any] = {
+        "ts": now_iso(),
+        "actor": admin.get("full_name") or admin.get("mobile", "Admin"),
+        "actor_id": admin.get("id"),
+    }
+    if "stage" in update and lead and lead.get("stage") != update["stage"]:
+        activity_entry["action"] = "stage_changed"
+        activity_entry["note"] = f"Stage changed from {lead.get('stage')} to {update['stage']}"
+    elif "notes" in update:
+        activity_entry["action"] = "note_added"
+        activity_entry["note"] = update["notes"]
+    elif "assigned_to" in update:
+        activity_entry["action"] = "assigned"
+        activity_entry["note"] = f"Assigned to {update['assigned_to']}"
+    elif "follow_up_date" in update:
+        activity_entry["action"] = "follow_up_set"
+        activity_entry["note"] = f"Follow-up set for {update['follow_up_date']}"
+    else:
+        activity_entry["action"] = "updated"
+        activity_entry["note"] = "Lead updated"
+
+    await db.leads.update_one(
+        {"id": lid},
+        {
+            "$set": update,
+            "$push": {"activity_log": {"$each": [activity_entry], "$slice": -50}},
+        }
+    )
+    return {"ok": True}
+
+
+@api_router.get("/admin/config")
+async def admin_get_config(admin=Depends(require_admin)):
+    cfg = await db.admin_config.find_one({}, {"_id": 0}) or {}
+    return cfg
+
+
+@api_router.post("/admin/config")
+async def admin_update_config(body: dict, admin=Depends(require_super_admin)):
+    allowed = {"calendly_url", "whatsapp_number", "consultation_duration_min"}
+    update = {k: v for k, v in body.items() if k in allowed}
+    update["updated_at"] = now_iso()
+    await db.admin_config.update_one({}, {"$set": update}, upsert=True)
     return {"ok": True}
 
 
@@ -699,6 +766,8 @@ async def admin_analytics(admin=Depends(require_admin)):
         "state_distribution": await state_distribution(db),
         "consultation_status": await consultation_status(db),
         "lead_pipeline": await lead_pipeline(db),
+        "daily_user_trend": await daily_user_trend(db),
+        "consultation_trend": await consultation_trend(db),
     }
 
 
