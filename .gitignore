@@ -80,7 +80,8 @@ frontend/.metro-cache/
 
 # Claude Code internal memory (machine-local)
 memory/test_credentials.md
-.claude/
+# Personal/machine-local Claude Code settings only; launch.json is project-level
+.claude/settings.local.json
 
 # Emergent agent metadata (not source)
 .emergent/
