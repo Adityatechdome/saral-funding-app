@@ -1,0 +1,197 @@
+{
+  "theme": "light",
+  "archetype": "High-Contrast Utilitarian Government Trust",
+  "colors": {
+    "primary": "#22C55E",
+    "primary_dark": "#15803D",
+    "background": "#FFFFFF",
+    "surface": "#FFFFFF",
+    "surface_secondary": "#F3F4F6",
+    "text_primary": "#111111",
+    "text_secondary": "#374151",
+    "border": "#E5E7EB",
+    "success": "#22C55E",
+    "error": "#EF4444",
+    "warning": "#F59E0B",
+    "black": "#111111",
+    "white": "#FFFFFF",
+    "transparent": "transparent"
+  },
+  "typography": {
+    "font_family_heading": "Manrope",
+    "font_family_body": "Inter",
+    "rules": {
+      "h1": { "fontSize": 32, "fontWeight": "800", "lineHeight": 40, "letterSpacing": -0.5, "color": "#111111" },
+      "h2": { "fontSize": 24, "fontWeight": "700", "lineHeight": 32, "letterSpacing": -0.5, "color": "#111111" },
+      "h3": { "fontSize": 20, "fontWeight": "600", "lineHeight": 28, "color": "#111111" },
+      "body_large": { "fontSize": 16, "fontWeight": "600", "lineHeight": 24, "color": "#111111" },
+      "body": { "fontSize": 14, "fontWeight": "400", "lineHeight": 20, "color": "#374151" },
+      "caption": { "fontSize": 12, "fontWeight": "500", "lineHeight": 16, "textTransform": "uppercase", "letterSpacing": 0.5, "color": "#374151" }
+    }
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "xl": 32,
+    "2xl": 48
+  },
+  "borders": {
+    "radius_sm": 4,
+    "radius_md": 8,
+    "radius_lg": 12,
+    "radius_xl": 16,
+    "radius_pill": 9999,
+    "width": 1
+  },
+  "shadows": {
+    "sm": { "shadowColor": "#000", "shadowOffset": { "width": 0, "height": 1 }, "shadowOpacity": 0.05, "shadowRadius": 2, "elevation": 1 },
+    "md": { "shadowColor": "#000", "shadowOffset": { "width": 0, "height": 2 }, "shadowOpacity": 0.05, "shadowRadius": 4, "elevation": 2 },
+    "none": { "shadowColor": "transparent", "elevation": 0 }
+  },
+  "components": {
+    "card": {
+      "backgroundColor": "#FFFFFF",
+      "borderRadius": 12,
+      "borderWidth": 1,
+      "borderColor": "#E5E7EB",
+      "padding": 16,
+      "marginBottom": 16
+    },
+    "button_primary": {
+      "backgroundColor": "#22C55E",
+      "borderRadius": 8,
+      "paddingVertical": 14,
+      "paddingHorizontal": 24,
+      "alignItems": "center",
+      "justifyContent": "center",
+      "minHeight": 48
+    },
+    "button_primary_text": {
+      "color": "#FFFFFF",
+      "fontSize": 16,
+      "fontWeight": "600"
+    },
+    "button_secondary": {
+      "backgroundColor": "#F3F4F6",
+      "borderRadius": 8,
+      "paddingVertical": 14,
+      "paddingHorizontal": 24,
+      "alignItems": "center",
+      "justifyContent": "center",
+      "minHeight": 48
+    },
+    "button_secondary_text": {
+      "color": "#111111",
+      "fontSize": 16,
+      "fontWeight": "600"
+    },
+    "input": {
+      "backgroundColor": "#FFFFFF",
+      "borderWidth": 1,
+      "borderColor": "#E5E7EB",
+      "borderRadius": 8,
+      "padding": 14,
+      "fontSize": 16,
+      "minHeight": 48,
+      "color": "#111111"
+    },
+    "chip": {
+      "backgroundColor": "#FFFFFF",
+      "borderRadius": 9999,
+      "paddingVertical": 8,
+      "paddingHorizontal": 16,
+      "borderWidth": 1,
+      "borderColor": "#E5E7EB",
+      "marginRight": 8,
+      "alignItems": "center",
+      "justifyContent": "center",
+      "minHeight": 40
+    },
+    "chip_active": {
+      "backgroundColor": "#EBFDF0",
+      "borderColor": "#22C55E",
+      "borderWidth": 1
+    },
+    "chip_text": {
+      "color": "#374151",
+      "fontSize": 14,
+      "fontWeight": "500"
+    },
+    "chip_text_active": {
+      "color": "#15803D",
+      "fontSize": 14,
+      "fontWeight": "600"
+    },
+    "chat_bubble_user": {
+      "backgroundColor": "#22C55E",
+      "borderRadius": 16,
+      "borderBottomRightRadius": 4,
+      "padding": 12,
+      "alignSelf": "flex-end",
+      "maxWidth": "80%"
+    },
+    "chat_bubble_ai": {
+      "backgroundColor": "#F3F4F6",
+      "borderRadius": 16,
+      "borderBottomLeftRadius": 4,
+      "padding": 12,
+      "alignSelf": "flex-start",
+      "maxWidth": "80%"
+    }
+  },
+  "layout_rules": {
+    "safe_area": "All screens must wrap content in SafeAreaView to handle mobile notches. Add safe area context appropriately to headers and bottom tabs.",
+    "bottom_tabs": "Use a clear bottom tab bar. Background white, active icon color #22C55E (Primary), inactive icon color #374151 (Dark Gray). Keep it minimal without background pills.",
+    "touch_targets": "All interactive elements (buttons, links, chips, tab bar icons) MUST have a minimum height and width of 48dp for accessibility compliance.",
+    "dashboard": "Keep strictly clean. Show maximum 5 cards/widgets on the screen at a time. Use a ScrollView with generous vertical padding (16px gaps). Avoid clutter.",
+    "lists": "Use FlatList for scheme lists. Implement visual separation using either cards with 16px margins or 1px border bottoms (#E5E7EB) to clearly delineate items.",
+    "forms": "Use KeyboardAvoidingView. Input fields must be tall (48px+). Avoid floating labels, use static clear labels above inputs for maximum legibility.",
+    "testing": "All Touchables, Pressables, TextInputs, and essential text Views MUST include a testID property (equivalent to data-testid in React Native). E.g., testID='login-submit-button'"
+  },
+  "motion": {
+    "transitions": "Use native React Navigation stack transitions. Avoid heavy custom animations.",
+    "feedback": "Use TouchableOpacity (activeOpacity={0.7}) or Pressable with Android ripple effect (color: '#E5E7EB') for instant tactile feedback on touch."
+  },
+  "icons": {
+    "library": "lucide-react-native",
+    "strokeWidth": 2,
+    "size_standard": 24,
+    "color_active": "#22C55E",
+    "color_inactive": "#374151"
+  },
+  "image_urls": [
+    {
+      "url": "https://images.pexels.com/photos/29039800/pexels-photo-29039800.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "category": "agriculture_farmer",
+      "description": "Indian farmer in rice field, useful for Agriculture scheme categories or hero headers."
+    },
+    {
+      "url": "https://images.pexels.com/photos/35704478/pexels-photo-35704478.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "category": "small_business_shop",
+      "description": "Indian shopkeeper in a grocery store, representing local traders and retail business owners."
+    },
+    {
+      "url": "https://images.unsplash.com/photo-1741591646737-e634ae96e83d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNDR8MHwxfHNlYXJjaHwxfHxpbmRpYW4lMjBtYW51ZmFjdHVyaW5nJTIwZmFjdG9yeSUyMHdvcmtlcnxlbnwwfHx8fDE3ODA5MjIyNjh8MA&ixlib=rb-4.1.0&q=85",
+      "category": "manufacturing_factory",
+      "description": "Industrial manufacturing setting with factory workers, ideal for MSME and manufacturing categories."
+    },
+    {
+      "url": "https://images.pexels.com/photos/6949788/pexels-photo-6949788.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "category": "women_entrepreneur",
+      "description": "South Asian woman in a retail store, suitable for Women Entrepreneur specific funding sections."
+    }
+  ],
+  "instructions_to_main_agent": [
+    "Develop the app using React Native and Expo.",
+    "Strictly follow the color palette. Absolutely no blue, no gradients, and no glassmorphism or blurred backgrounds.",
+    "Implement the UI using plain React Native StyleSheet objects with the tokens provided in this file.",
+    "For shadows, use React Native's elevation property for Android and shadowColor/Offset/Opacity for iOS as defined in the shadows object.",
+    "Use 'testID' props consistently across all touchable components and form inputs in place of 'data-testid'.",
+    "Design the dashboard for maximal clarity with high contrast text. Background should be #FFFFFF or #F3F4F6 with white cards.",
+    "The AI Advisor should mimic a clean ChatGPT interface: user messages in green, AI messages in light gray. Include an input bar at the bottom with a submit icon.",
+    "The language selection screen should be simple grid or list of cards with 9 Indian languages clearly labeled in native scripts as well as English.",
+    "Ensure touch targets are universally 48dp minimum."
+  ]
+}
