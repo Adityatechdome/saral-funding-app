@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "Mock API Server",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["mock-server.js"],
+      "port": 3001
+    },
+    {
       "name": "FastAPI Backend",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "uvicorn", "server:app", "--reload", "--host", "0.0.0.0", "--port", "8000"],
@@ -15,7 +21,7 @@
       "runtimeArgs": ["run", "web"],
       "port": 8081,
       "cwd": "frontend",
-      "note": "Set EXPO_PUBLIC_BACKEND_URL=http://localhost:8000 in frontend/.env"
+      "note": "Set EXPO_PUBLIC_BACKEND_URL=http://localhost:3001 (mock) or http://localhost:8000 (real) in frontend/.env"
     }
   ]
 }
