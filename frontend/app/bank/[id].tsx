@@ -4,7 +4,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Building2, TrendingDown, DollarSign, BadgePercent,
-  CreditCard, ShieldCheck, Factory, CheckCircle2, XCircle, Phone,
+  CreditCard, ShieldCheck, Factory, CheckCircle2, XCircle, Phone, Clock,
+  TrendingUp, TrendingDown as TrendingDownIcon, Minus,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR } from "@/src/theme";
@@ -27,6 +28,62 @@ function BankSkeleton() {
     </View>
   );
 }
+
+function MatchScoreRing({ score }: { score: number }) {
+  const color = score >= 80 ? colors.primary : score >= 60 ? "#F59E0B" : "#9CA3AF";
+  const label = score >= 80 ? "Strong Match" : score >= 60 ? "Good Match" : "Partial Match";
+  return (
+    <View style={matchStyles.wrap}>
+      <View style={[matchStyles.ring, { borderColor: color }]}>
+        <Text style={[matchStyles.score, { color }]}>{score}</Text>
+        <Text style={matchStyles.pct}>%</Text>
+      </View>
+      <View>
+        <Text style={matchStyles.label}>Match Score</Text>
+        <Text style={[matchStyles.sublabel, { color }]}>{label}</Text>
+      </View>
+    </View>
+  );
+}
+const matchStyles = StyleSheet.create({
+  wrap: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 14 },
+  ring: {
+    width: 64, height: 64, borderRadius: 32, borderWidth: 3,
+    alignItems: "center", justifyContent: "center", backgroundColor: "#FFF",
+  },
+  score: { fontSize: 20, fontFamily: fonts.displayBold, lineHeight: 22 },
+  pct: { fontSize: 10, fontFamily: fonts.medium, color: colors.textDim, marginTop: -2 },
+  label: { fontSize: 11, fontFamily: fonts.bold, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
+  sublabel: { fontSize: 15, fontFamily: fonts.displayBold, marginTop: 2 },
+});
+
+function MatchBreakdownRow({ factor, delta, note }: { factor: string; delta: number; note: string }) {
+  const positive = delta > 0;
+  const neutral = delta === 0;
+  const color = positive ? colors.primary : neutral ? colors.textDim : colors.warning;
+  const Icon = positive ? TrendingUp : neutral ? Minus : TrendingDownIcon;
+  return (
+    <View style={mbStyles.row}>
+      <View style={[mbStyles.iconWrap, { backgroundColor: color + "18" }]}>
+        <Icon size={12} color={color} strokeWidth={2.5} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={mbStyles.factor}>{factor}</Text>
+        <Text style={mbStyles.note}>{note}</Text>
+      </View>
+      {delta !== 0 && (
+        <Text style={[mbStyles.delta, { color }]}>{positive ? "+" : ""}{delta}</Text>
+      )}
+    </View>
+  );
+}
+const mbStyles = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
+  iconWrap: { width: 26, height: 26, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  factor: { fontSize: 13, fontFamily: fonts.semiBold, color: colors.text },
+  note: { fontSize: 11, fontFamily: fonts.regular, color: colors.textMuted, marginTop: 1 },
+  delta: { fontSize: 13, fontFamily: fonts.bold, minWidth: 28, textAlign: "right" },
+});
 
 function MetricTile({
   Icon,
@@ -114,6 +171,21 @@ export default function BankDetail() {
         </View>
 
         <View style={{ paddingHorizontal: spacing.md }}>
+          {/* Match score */}
+          {bank.score != null && (
+            <View style={styles.matchCard}>
+              <MatchScoreRing score={bank.score} />
+              {(bank.match_breakdown || []).length > 0 && (
+                <View>
+                  <Text style={styles.sectionTitle}>Match Breakdown</Text>
+                  {bank.match_breakdown.map((item: any, i: number) => (
+                    <MatchBreakdownRow key={i} factor={item.factor} delta={item.delta} note={item.note} />
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+
           {/* Metrics grid */}
           <View style={styles.tileGrid}>
             <MetricTile
@@ -140,6 +212,14 @@ export default function BankDetail() {
               valueColor={bank.collateral_required ? colors.warning : colors.primary}
               highlight={!bank.collateral_required}
             />
+            {bank.processing_time_days != null && (
+              <MetricTile
+                Icon={Clock}
+                label="Processing Time"
+                value={`~${bank.processing_time_days} days`}
+                highlight={bank.processing_time_days <= 7}
+              />
+            )}
           </View>
 
           {/* Supported programs */}
@@ -158,10 +238,20 @@ export default function BankDetail() {
           )}
 
           {/* Why recommended */}
-          {bank.why && (
+          {(bank.why || (bank.why_reasons || []).length > 0) && (
             <View style={styles.whyCard}>
               <Text style={styles.whyTitle}>Why we recommend this bank</Text>
-              <Text style={styles.whyBody}>{bank.why}</Text>
+              {bank.why && <Text style={styles.whyBody}>{bank.why}</Text>}
+              {(bank.why_reasons || []).length > 0 && (
+                <View style={{ marginTop: bank.why ? 10 : 0, gap: 6 }}>
+                  {bank.why_reasons.map((r: string, i: number) => (
+                    <View key={i} style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+                      <CheckCircle2 size={13} color={colors.primaryDark} strokeWidth={2.5} style={{ marginTop: 2 }} />
+                      <Text style={styles.whyBullet}>{r}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           )}
 
@@ -370,6 +460,14 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     color: colors.textMuted,
   },
+  matchCard: {
+    backgroundColor: "#FFF",
+    borderRadius: radius.xxl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.sm2,
+  },
   whyCard: {
     backgroundColor: colors.primarySoft,
     borderRadius: radius.xl,
@@ -391,5 +489,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     color: colors.text,
     lineHeight: 20,
+  },
+  whyBullet: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: colors.text,
+    lineHeight: 19,
+    flex: 1,
   },
 });

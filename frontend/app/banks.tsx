@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Building2, Shield, CheckCircle2, XCircle, GitCompare, ArrowRight } from "lucide-react-native";
+import { Building2, Shield, CheckCircle2, XCircle, GitCompare, ArrowRight, Clock } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR } from "@/src/theme";
 import { apiGet } from "@/src/api";
@@ -19,7 +19,8 @@ import { SchemesSkeleton } from "@/src/components/SkeletonLoader";
 type Rec = {
   bank_id: string; name: string; short_name: string; type: string; score: number;
   interest_range: string; suggested_amount: number; collateral_required: boolean;
-  supports: string[]; why: string; description: string;
+  processing_time_days: number; supports: string[]; why: string; description: string;
+  why_reasons: string[];
 };
 
 function ScoreRing({ score }: { score: number }) {
@@ -133,6 +134,15 @@ export default function BanksScreen() {
                       </Text>
                     </View>
                   </View>
+                  {item.processing_time_days != null && (
+                    <View style={[styles.statBox, styles.statBoxBorder]}>
+                      <Text style={styles.statKey}>Processing</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 }}>
+                        <Clock size={11} color={colors.textDim} strokeWidth={2} />
+                        <Text style={styles.statVal}>{item.processing_time_days}d</Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
 
                 {/* Supported schemes pills */}

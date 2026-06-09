@@ -127,9 +127,22 @@ const BANKS = [
     states: ["All India"],
     description: "India's largest public sector bank with the widest reach across rural and urban areas.",
     why: "Highest loan limits, lowest interest rates, and strong government scheme support make SBI the ideal partner for MSME funding.",
+    why_reasons: [
+      "Funding need ₹25,00,000 is within SBI max of ₹5,00,00,000",
+      "GST + Udyam registered — preferred by public banks",
+      "Stand-Up India eligibility for woman/SC/ST entrepreneurs",
+    ],
+    match_breakdown: [
+      { factor: "Funding fit", delta: 12, note: "Your need ₹25,00,000 is within limit" },
+      { factor: "Industry match", delta: 8, note: "Manufacturing is a supported sector" },
+      { factor: "Geographic reach", delta: 5, note: "Bank operates in your state" },
+      { factor: "Registration status", delta: 10, note: "GST + Udyam both present" },
+      { factor: "Collateral", delta: 6, note: "Collateral-free loan available" },
+    ],
     score: 92,
     interest_range: "8.4% – 14%",
     suggested_amount: 2500000,
+    processing_time_days: 21,
   },
   {
     id: "hdfc",
@@ -148,9 +161,22 @@ const BANKS = [
     states: ["All India"],
     description: "India's leading private sector bank known for fast processing and digital-first services.",
     why: "Fast loan processing (3-5 days) and dedicated MSME relationship managers make HDFC ideal for time-sensitive funding needs.",
+    why_reasons: [
+      "GST + Udyam registered — preferred by private banks",
+      "Collateral-free business loan available",
+      "Manufacturing is supported by HDFC",
+    ],
+    match_breakdown: [
+      { factor: "Funding fit", delta: 12, note: "Your need is within limit" },
+      { factor: "Industry match", delta: 8, note: "Manufacturing is a supported sector" },
+      { factor: "Registration status", delta: 10, note: "GST + Udyam both present" },
+      { factor: "Collateral", delta: 6, note: "Collateral-free loan available" },
+      { factor: "Business vintage", delta: 8, note: "Established business meets private bank criteria" },
+    ],
     score: 85,
     interest_range: "10% – 18%",
     suggested_amount: 2000000,
+    processing_time_days: 10,
   },
   {
     id: "bob",
@@ -169,9 +195,22 @@ const BANKS = [
     states: ["All India"],
     description: "Major public sector bank with strong presence in Gujarat and western India.",
     why: "Strong MSME portfolio and expertise in Gujarat-specific state government schemes.",
+    why_reasons: [
+      "Funding need is within BoB's ₹3 Cr limit",
+      "Strong MSME focus in Gujarat and western India",
+      "PMEGP and Mudra scheme eligibility confirmed",
+    ],
+    match_breakdown: [
+      { factor: "Funding fit", delta: 12, note: "Your need is within limit" },
+      { factor: "Geographic reach", delta: 5, note: "Strong Gujarat presence" },
+      { factor: "Registration status", delta: 4, note: "Udyam registered" },
+      { factor: "Collateral", delta: 6, note: "Collateral-free loan available" },
+      { factor: "Industry match", delta: 0, note: "Manufacturing is broadly supported" },
+    ],
     score: 78,
     interest_range: "8.7% – 14.5%",
     suggested_amount: 1500000,
+    processing_time_days: 21,
   },
 ];
 
@@ -390,6 +429,7 @@ async function handle(req, res) {
   }
 
   if (path === "/banks/recommend/me" && method === "GET") {
+    const processingDays = { Public: 21, Private: 10, NBFC: 7, MFI: 5 };
     return json(res, 200, {
       recommendations: BANKS.map((b) => ({
         bank_id: b.id,
@@ -400,8 +440,10 @@ async function handle(req, res) {
         interest_range: b.interest_range,
         suggested_amount: b.suggested_amount,
         collateral_required: b.collateral_required,
+        processing_time_days: processingDays[b.type] || 14,
         supports: b.supports,
         why: b.why,
+        why_reasons: b.why_reasons || [],
         description: b.description,
       })),
     });
