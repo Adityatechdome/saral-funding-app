@@ -29,7 +29,7 @@ import { getLang } from "@/src/i18n";
 import { useRouter } from "expo-router";
 import Saathi from "@/src/components/Saathi";
 
-type Msg = { role: "user" | "assistant"; content: string; structured?: any; ts?: number };
+type Msg = { role: "user" | "assistant"; content: string; structured?: any; ts?: number; followUps?: string[] };
 
 const SUGGESTIONS = [
   "I need ₹25 lakh for a steel fabrication shop",
@@ -47,52 +47,17 @@ function formatRelativeTime(ts?: number): string {
   return new Date(ts).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
-// Animated three-dot typing indicator — hooks declared at top level
+// Saathi thinking indicator
 function TypingIndicator() {
-  const dot1 = useSharedValue(0);
-  const dot2 = useSharedValue(0);
-  const dot3 = useSharedValue(0);
-
-  useEffect(() => {
-    const bounce = (v: any, delay: number) => {
-      v.value = withDelay(
-        delay,
-        withRepeat(
-          withSequence(
-            withTiming(-6, { duration: 280 }),
-            withTiming(0, { duration: 280 })
-          ),
-          -1,
-          false
-        )
-      );
-    };
-    bounce(dot1, 0);
-    bounce(dot2, 150);
-    bounce(dot3, 300);
-  }, []);
-
-  const style1 = useAnimatedStyle(() => ({ transform: [{ translateY: dot1.value }] }));
-  const style2 = useAnimatedStyle(() => ({ transform: [{ translateY: dot2.value }] }));
-  const style3 = useAnimatedStyle(() => ({ transform: [{ translateY: dot3.value }] }));
-
   return (
     <View style={typStyles.wrap}>
-      <View style={typStyles.bubble}>
-        <Animated.View style={[typStyles.dot, style1]} />
-        <Animated.View style={[typStyles.dot, style2]} />
-        <Animated.View style={[typStyles.dot, style3]} />
-      </View>
-      <Text style={typStyles.label}>Advisor is thinking…</Text>
+      <Saathi expression="thinking" size={56} animate message="Analysing your question…" />
     </View>
   );
 }
 
 const typStyles = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: spacing.md, paddingBottom: 8 },
-  bubble: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: colors.surfaceAlt, borderRadius: radius.xl, paddingHorizontal: 14, paddingVertical: 12 },
-  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.primary },
-  label: { fontSize: 12, fontFamily: fonts.medium, color: colors.textMuted },
+  wrap: { alignItems: "flex-start", paddingHorizontal: spacing.md, paddingBottom: 8 },
 });
 
 export default function Advisor() {
@@ -119,10 +84,16 @@ export default function Advisor() {
     try {
       if (mode === "strategy") {
         const r = await apiPost<any>("/advisor/structured", { query: msg, language: getLang() });
-        setMessages((m) => [...m, { role: "assistant", content: r.summary || "", structured: r, ts: Date.now() }]);
+        const followUps = [
+          "What documents do I need?",
+          "Which bank should I approach first?",
+          "How long does approval take?",
+        ];
+        setMessages((m) => [...m, { role: "assistant", content: r.summary || "", structured: r, ts: Date.now(), followUps }]);
       } else {
-        const r = await apiPost<{ reply: string }>("/advisor/chat", { message: msg, language: getLang() });
-        setMessages((m) => [...m, { role: "assistant", content: r.reply, ts: Date.now() }]);
+        const r = await apiPost<{ reply: string; follow_ups?: string[] }>("/advisor/chat", { message: msg, language: getLang() });
+        const followUps = r.follow_ups || deriveFollowUps(msg);
+        setMessages((m) => [...m, { role: "assistant", content: r.reply, ts: Date.now(), followUps }]);
       }
     } catch {
       setMessages((m) => [
@@ -134,6 +105,19 @@ export default function Advisor() {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     }
   };
+
+  function deriveFollowUps(userMsg: string): string[] {
+    const lower = userMsg.toLowerCase();
+    if (lower.includes("pmegp") || lower.includes("subsidy"))
+      return ["How to apply for PMEGP?", "What's the subsidy percentage?", "Eligibility criteria?"];
+    if (lower.includes("mudra") || lower.includes("loan"))
+      return ["What is the interest rate?", "How long does approval take?", "Do I need collateral?"];
+    if (lower.includes("women") || lower.includes("female"))
+      return ["Best schemes for women?", "Stand-Up India eligibility?", "Udyam registration needed?"];
+    if (lower.includes("gst") || lower.includes("udyam"))
+      return ["How to register for GST?", "How to get Udyam certificate?", "Does it affect loan eligibility?"];
+    return ["Tell me more", "Which bank should I approach?", "What documents do I need?"];
+  }
 
   const clearChat = async () => {
     await apiDelete("/advisor/history");
@@ -201,7 +185,14 @@ export default function Advisor() {
               );
             }
             if (item.structured) {
-              return <StructuredCard data={item.structured} ts={item.ts} router={router} />;
+              return (
+                <View>
+                  <StructuredCard data={item.structured} ts={item.ts} router={router} />
+                  {(item.followUps || []).length > 0 && (
+                    <FollowUpChips chips={item.followUps!} onPress={send} />
+                  )}
+                </View>
+              );
             }
             return (
               <View style={styles.aiBubbleWrap}>
@@ -209,6 +200,10 @@ export default function Advisor() {
                   <Text style={styles.aiBubbleText}>{item.content}</Text>
                 </View>
                 <Text style={styles.timestamp}>{formatRelativeTime(item.ts)}</Text>
+                {(item.followUps || []).length > 0 && (
+                  <FollowUpChips chips={item.followUps!} onPress={send} />
+                )}
+                <ActionButtons content={item.content} router={router} />
               </View>
             );
           }}
@@ -273,6 +268,66 @@ export default function Advisor() {
     </SafeAreaView>
   );
 }
+
+// ── Follow-up chips ───────────────────────────────────────────────────────
+function FollowUpChips({ chips, onPress }: { chips: string[]; onPress: (t: string) => void }) {
+  return (
+    <View style={fu.wrap}>
+      {chips.map((c) => (
+        <TouchableOpacity key={c} style={fu.chip} onPress={() => onPress(c)} activeOpacity={0.75}>
+          <ChevronRight size={11} color={colors.primaryDark} strokeWidth={2.5} />
+          <Text style={fu.chipText}>{c}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+const fu = StyleSheet.create({
+  wrap: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8, paddingLeft: 4 },
+  chip: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: colors.primarySoft, borderRadius: radius.pill,
+    paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: colors.primaryMid,
+  },
+  chipText: { fontSize: 11, fontFamily: fonts.semiBold, color: colors.primaryDark },
+});
+
+// ── Action buttons (deep-link into app) ───────────────────────────────────
+function ActionButtons({ content, router }: { content: string; router: any }) {
+  const lower = content.toLowerCase();
+  const actions: Array<{ label: string; icon: any; route: string }> = [];
+  if (lower.includes("scheme") || lower.includes("pmegp") || lower.includes("mudra") || lower.includes("subsidy")) {
+    actions.push({ label: "Browse Schemes", icon: Landmark, route: "/schemes" });
+  }
+  if (lower.includes("bank") || lower.includes("loan") || lower.includes("hdfc") || lower.includes("sbi")) {
+    actions.push({ label: "View Banks", icon: Building2, route: "/banks" });
+  }
+  if (lower.includes("consult") || lower.includes("advisor") || lower.includes("expert")) {
+    actions.push({ label: "Book Consultation", icon: MessageSquare, route: "/booking" });
+  }
+  if (actions.length === 0) return null;
+  return (
+    <View style={ab.row}>
+      {actions.map((a) => (
+        <TouchableOpacity key={a.route} style={ab.btn} onPress={() => router.push(a.route)} activeOpacity={0.8}>
+          <a.icon size={12} color={colors.primaryDark} strokeWidth={2} />
+          <Text style={ab.btnText}>{a.label}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+const ab = StyleSheet.create({
+  row: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
+  btn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: "#FFF", borderRadius: radius.xl,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderWidth: 1, borderColor: colors.border,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1,
+  },
+  btnText: { fontSize: 12, fontFamily: fonts.semiBold, color: colors.primaryDark },
+});
 
 // ── Structured Roadmap Card ────────────────────────────────────────────────
 

@@ -511,7 +511,15 @@ async function handle(req, res) {
     history.push({ role: "user", content: body.message, ts: Date.now() });
     const reply = getMockAdvisorReply(body.message);
     history.push({ role: "assistant", content: reply, ts: Date.now() });
-    return json(res, 200, { reply });
+    const lower = (body.message || "").toLowerCase();
+    const follow_ups = lower.includes("pmegp") || lower.includes("subsidy")
+      ? ["How to apply for PMEGP?", "What's the subsidy %?", "Documents needed?"]
+      : lower.includes("loan") || lower.includes("bank")
+      ? ["What is the interest rate?", "Which bank is best?", "Collateral required?"]
+      : lower.includes("gst") || lower.includes("udyam")
+      ? ["How to register GST?", "Is Udyam free?", "Impact on loan eligibility?"]
+      : ["Tell me more", "Which schemes apply to me?", "Book a consultation?"];
+    return json(res, 200, { reply, follow_ups });
   }
 
   if (path === "/advisor/structured" && method === "POST") {
