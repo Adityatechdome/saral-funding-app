@@ -1,0 +1,182 @@
+import { useCallback, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect, useRouter } from "expo-router";
+import {
+  Users, Landmark, Phone, Target, Bell, BarChart3,
+  TrendingUp, MessageSquare, ChevronRight
+} from "lucide-react-native";
+
+import { colors, spacing, radius, fonts } from "@/src/theme";
+import { apiGet } from "@/src/api";
+import { BackBar } from "@/src/components/StepBar";
+import { SkeletonBox } from "@/src/components/SkeletonLoader";
+
+type Overview = {
+  total_users: number; total_admins: number; total_schemes: number;
+  total_consultations: number; total_leads: number; total_chats: number; daily_active_users: number;
+};
+
+const MODULES = [
+  { id: "users", label: "Users", sub: "Manage & export", Icon: Users, color: colors.primarySoft, iconColor: colors.primaryDark },
+  { id: "schemes", label: "Schemes", sub: "Create & manage", Icon: Landmark, color: "#DBEAFE", iconColor: "#1D4ED8" },
+  { id: "consultations", label: "Consultations", sub: "Track & update", Icon: Phone, color: "#EDE9FE", iconColor: "#5B21B6" },
+  { id: "leads", label: "CRM / Leads", sub: "Pipeline & stages", Icon: Target, color: "#FEF3C7", iconColor: "#92400E" },
+  { id: "notifications", label: "Notifications", sub: "Broadcast messages", Icon: Bell, color: "#FEE2E2", iconColor: "#DC2626" },
+  { id: "analytics", label: "Analytics", sub: "Trends & insights", Icon: BarChart3, color: colors.surfaceAlt, iconColor: colors.textMuted },
+];
+
+function StatCard({ label, value, Icon, color, iconColor }: { label: string; value: string; Icon: any; color: string; iconColor: string }) {
+  return (
+    <View style={[statStyles.card]}>
+      <View style={[statStyles.icon, { backgroundColor: color }]}>
+        <Icon size={14} color={iconColor} strokeWidth={2} />
+      </View>
+      <Text style={statStyles.value}>{value}</Text>
+      <Text style={statStyles.label}>{label}</Text>
+    </View>
+  );
+}
+
+const statStyles = StyleSheet.create({
+  card: {
+    width: "31%",
+    backgroundColor: "#FFF",
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  icon: { width: 28, height: 28, borderRadius: radius.md, alignItems: "center", justifyContent: "center", marginBottom: 8 },
+  value: { fontSize: 20, fontFamily: fonts.displayBold, color: colors.text, lineHeight: 24 },
+  label: { fontSize: 10, fontFamily: fonts.medium, color: colors.textMuted, marginTop: 3, lineHeight: 14 },
+});
+
+export default function AdminHome() {
+  const router = useRouter();
+  const [o, setO] = useState<Overview | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      apiGet<Overview>("/admin/overview")
+        .then((d) => { setO(d); setLoading(false); })
+        .catch(() => setLoading(false));
+    }, [])
+  );
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface2 }} edges={["top", "bottom"]} testID="admin-home">
+      <BackBar title="Admin Console" onBack={() => router.back()} />
+      <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+
+        {/* Stats grid */}
+        <Text style={styles.sectionLabel}>Overview</Text>
+        {loading ? (
+          <View style={styles.statsGrid}>
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <SkeletonBox key={i} width="31%" height={90} borderRadius={radius.xl} />
+            ))}
+          </View>
+        ) : (
+          <View style={styles.statsGrid}>
+            <StatCard label="Total Users" value={String(o?.total_users ?? 0)} Icon={Users} color={colors.primarySoft} iconColor={colors.primaryDark} />
+            <StatCard label="Daily Active" value={String(o?.daily_active_users ?? 0)} Icon={TrendingUp} color="#DBEAFE" iconColor="#1D4ED8" />
+            <StatCard label="AI Chats" value={String(o?.total_chats ?? 0)} Icon={MessageSquare} color="#EDE9FE" iconColor="#5B21B6" />
+            <StatCard label="Consultations" value={String(o?.total_consultations ?? 0)} Icon={Phone} color="#FEF3C7" iconColor="#92400E" />
+            <StatCard label="Leads" value={String(o?.total_leads ?? 0)} Icon={Target} color="#FEE2E2" iconColor="#DC2626" />
+            <StatCard label="Schemes" value={String(o?.total_schemes ?? 0)} Icon={Landmark} color={colors.surfaceAlt} iconColor={colors.textMuted} />
+          </View>
+        )}
+
+        {/* Modules */}
+        <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Modules</Text>
+        <View style={styles.modulesGrid}>
+          {MODULES.map((m) => (
+            <TouchableOpacity
+              key={m.id}
+              testID={`admin-nav-${m.id}`}
+              style={styles.moduleTile}
+              onPress={() => router.push(`/admin/${m.id}` as any)}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.moduleIcon, { backgroundColor: m.color }]}>
+                <m.Icon size={20} color={m.iconColor} strokeWidth={2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.moduleLabel}>{m.label}</Text>
+                <Text style={styles.moduleSub}>{m.sub}</Text>
+              </View>
+              <ChevronRight size={15} color={colors.textDim} strokeWidth={2} />
+            </TouchableOpacity>
+          ))}
+        </View>
+
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  sectionLabel: {
+    fontSize: 11,
+    fontFamily: fonts.bold,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 10,
+  },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  modulesGrid: {
+    gap: 8,
+  },
+  moduleTile: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#FFF",
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  moduleIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.xl,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moduleLabel: {
+    fontSize: 15,
+    fontFamily: fonts.displayBold,
+    color: colors.text,
+  },
+  moduleSub: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+});
