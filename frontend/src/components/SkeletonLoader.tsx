@@ -91,6 +91,45 @@ export function SchemesSkeleton() {
   );
 }
 
+export function FundingCaseSkeleton() {
+  return (
+    <View style={{ padding: 16 }}>
+      <SkeletonBox width={180} height={22} borderRadius={8} style={{ marginBottom: 4 }} />
+      <SkeletonBox width={140} height={13} borderRadius={6} style={{ marginBottom: 16 }} />
+      <View style={skStyles.heroCard}>
+        <SkeletonBox width="45%" height={52} borderRadius={8} style={{ backgroundColor: "rgba(255,255,255,0.3)" }} />
+        <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+          <SkeletonBox width="45%" height={40} borderRadius={8} style={{ backgroundColor: "rgba(255,255,255,0.2)" }} />
+          <SkeletonBox width="45%" height={40} borderRadius={8} style={{ backgroundColor: "rgba(255,255,255,0.2)" }} />
+        </View>
+      </View>
+      {[0, 1, 2].map((i) => (
+        <View key={i} style={skStyles.card}>
+          <SkeletonBox width={140} height={14} />
+          <SkeletonBox width="85%" height={11} style={{ marginTop: 8 }} />
+          <SkeletonBox width="65%" height={11} style={{ marginTop: 6 }} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+export function BankSkeleton() {
+  return (
+    <View style={{ padding: 16 }}>
+      {[0, 1, 2].map((i) => (
+        <View key={i} style={[skStyles.card, { flexDirection: "row", alignItems: "center", gap: 12 }]}>
+          <SkeletonBox width={40} height={40} borderRadius={12} />
+          <View style={{ flex: 1 }}>
+            <SkeletonBox width="60%" height={14} />
+            <SkeletonBox width="80%" height={11} style={{ marginTop: 8 }} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const skStyles = StyleSheet.create({
   wrap: { padding: 16 },
   heroCard: {

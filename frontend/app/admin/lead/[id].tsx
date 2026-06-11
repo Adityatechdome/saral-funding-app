@@ -1,20 +1,28 @@
 import { useEffect, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Modal, TextInput, Alert,
+  ActivityIndicator, Modal, TextInput, Alert, Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   User, Phone, MapPin, Building2, DollarSign, StickyNote,
   Calendar, Clock, ArrowRight, CheckCircle2, AlertCircle,
-  FileText, ChevronDown, X, Tag,
+  FileText, ChevronDown, X, Tag, Upload, Star, ExternalLink,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR, stageColor } from "@/src/theme";
-import { apiGet, apiPost } from "@/src/api";
+import { apiGet, apiPost, getToken, API_BASE } from "@/src/api";
 import { BackBar } from "@/src/components/StepBar";
 import { SkeletonBox } from "@/src/components/SkeletonLoader";
+
+const RECOMMENDED_BANKS = [
+  "State Bank of India",
+  "HDFC Bank",
+  "Bank of Baroda",
+  "Punjab National Bank",
+  "Axis Bank",
+];
 
 const STAGES = ["new", "contacted", "interested", "documentation", "submitted", "approved", "disbursed", "closed"];
 
@@ -108,12 +116,39 @@ export default function LeadDetail() {
   const [followUp, setFollowUp] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Documents
+  const [userDocs, setUserDocs] = useState<any[]>([]);
+  const [docActionLoading, setDocActionLoading] = useState<string | null>(null);
+  const [viewingDoc, setViewingDoc] = useState<string | null>(null);
+
+  // Admin Recommendations
+  const [existingRec, setExistingRec] = useState<any>(null);
+  const [selectedSchemes, setSelectedSchemes] = useState<string[]>([]);
+  const [selectedBanks, setSelectedBanks] = useState<string[]>([]);
+  const [recNote, setRecNote] = useState("");
+  const [savingRec, setSavingRec] = useState(false);
+
   const load = async () => {
     try {
       const d = await apiGet<any>(`/admin/leads/${id}`);
       setData(d);
       setNotes(d.notes || "");
       setFollowUp(d.follow_up_date || "");
+      // Load docs and existing recommendation in parallel
+      const userId = d.user?.id || d.user_id;
+      if (userId) {
+        const [docs, rec] = await Promise.all([
+          apiGet<any[]>(`/admin/users/${userId}/documents`).catch(() => []),
+          apiGet<any>(`/admin/users/${userId}/recommendations`).catch(() => null),
+        ]);
+        setUserDocs(Array.isArray(docs) ? docs : []);
+        if (rec) {
+          setExistingRec(rec);
+          setSelectedSchemes(rec.schemes || []);
+          setSelectedBanks(rec.banks || []);
+          setRecNote(rec.note || "");
+        }
+      }
     } catch {
       Alert.alert("Error", "Could not load lead");
     } finally {
@@ -122,6 +157,58 @@ export default function LeadDetail() {
   };
 
   useEffect(() => { load(); }, [id]);
+
+  const handleDocStatus = async (docId: string, status: "verified" | "rejected") => {
+    setDocActionLoading(docId + status);
+    try {
+      await apiPost(`/admin/documents/${docId}/status`, { status });
+      const userId = data?.user?.id || data?.user_id;
+      if (userId) {
+        const docs = await apiGet<any[]>(`/admin/users/${userId}/documents`).catch(() => []);
+        setUserDocs(Array.isArray(docs) ? docs : []);
+      }
+    } catch {
+      Alert.alert("Error", "Could not update document status.");
+    } finally {
+      setDocActionLoading(null);
+    }
+  };
+
+  const handleAdminViewDoc = async (docId: string) => {
+    setViewingDoc(docId);
+    try {
+      const token = await getToken();
+      const response = await fetch(`${API_BASE}/admin/documents/${docId}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Could not get download link");
+      const { url } = await response.json();
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert("Error", "Could not open document. Please try again.");
+    } finally {
+      setViewingDoc(null);
+    }
+  };
+
+  const saveRecommendations = async () => {
+    setSavingRec(true);
+    try {
+      const userId = data?.user?.id || data?.user_id;
+      await apiPost(`/admin/users/${userId}/recommendations`, {
+        schemes: selectedSchemes,
+        banks: selectedBanks,
+        note: recNote,
+      });
+      Alert.alert("Saved", "Recommendations sent to user.");
+      const rec = await apiGet<any>(`/admin/users/${userId}/recommendations`).catch(() => null);
+      setExistingRec(rec);
+    } catch {
+      Alert.alert("Error", "Could not save recommendations.");
+    } finally {
+      setSavingRec(false);
+    }
+  };
 
   const moveStage = async (stage: string) => {
     setSaving(true);
@@ -239,6 +326,145 @@ export default function LeadDetail() {
             ))}
           </SectionCard>
         )}
+
+        {/* Uploaded Documents */}
+        <SectionCard title={`Uploaded Documents (${userDocs.length})`}>
+          {userDocs.length === 0 ? (
+            <Text style={styles.emptyNote}>No documents uploaded by this user yet.</Text>
+          ) : (
+            userDocs.map((doc: any) => {
+              const statusBg = doc.status === "verified" ? colors.primarySoft : doc.status === "rejected" ? "#FEE2E2" : "#FEF3C7";
+              const statusColor = doc.status === "verified" ? colors.primaryDark : doc.status === "rejected" ? "#DC2626" : "#92400E";
+              return (
+                <View key={doc.id} style={styles.docRow}>
+                  <FileText size={14} color={colors.textDim} strokeWidth={2} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.docName}>{doc.doc_type}</Text>
+                    <Text style={styles.docDate}>
+                      {doc.created_at ? new Date(doc.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                    </Text>
+                  </View>
+                  <View style={[styles.docStatusBadge, { backgroundColor: statusBg }]}>
+                    <Text style={[styles.docStatusText, { color: statusColor }]}>{doc.status}</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+                    {/* View button — available for all docs that have a file */}
+                    {doc.file_name && (
+                      <TouchableOpacity
+                        style={[styles.docActionBtn, { backgroundColor: colors.surfaceAlt }]}
+                        onPress={() => handleAdminViewDoc(doc.id)}
+                        disabled={viewingDoc === doc.id}
+                      >
+                        {viewingDoc === doc.id
+                          ? <ActivityIndicator size="small" color={colors.textDim} />
+                          : <ExternalLink size={12} color={colors.textDim} strokeWidth={2} />
+                        }
+                      </TouchableOpacity>
+                    )}
+                    {doc.status === "pending" && (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.docActionBtn, { backgroundColor: colors.primarySoft }]}
+                          onPress={() => handleDocStatus(doc.id, "verified")}
+                          disabled={!!docActionLoading}
+                        >
+                          {docActionLoading === doc.id + "verified"
+                            ? <ActivityIndicator size="small" color={colors.primaryDark} />
+                            : <Text style={[styles.docActionText, { color: colors.primaryDark }]}>Verify</Text>
+                          }
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.docActionBtn, { backgroundColor: "#FEE2E2" }]}
+                          onPress={() => handleDocStatus(doc.id, "rejected")}
+                          disabled={!!docActionLoading}
+                        >
+                          {docActionLoading === doc.id + "rejected"
+                            ? <ActivityIndicator size="small" color="#DC2626" />
+                            : <Text style={[styles.docActionText, { color: "#DC2626" }]}>Reject</Text>
+                          }
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </SectionCard>
+
+        {/* Admin Recommendations */}
+        <SectionCard title="Admin Recommendations">
+          {existingRec && (
+            <View style={styles.existingRecBanner}>
+              <Star size={12} color="#065F46" strokeWidth={2.5} />
+              <Text style={styles.existingRecText}>
+                Last saved on{" "}
+                {existingRec.created_at
+                  ? new Date(existingRec.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+                  : "—"}
+              </Text>
+            </View>
+          )}
+
+          <Text style={styles.recSubLabel}>Recommended Schemes</Text>
+          <View style={styles.recChipsWrap}>
+            {schemeMatches.map((s: any) => {
+              const active = selectedSchemes.includes(s.name);
+              return (
+                <TouchableOpacity
+                  key={s.scheme_id}
+                  style={[styles.recChip, active && styles.recChipActive]}
+                  onPress={() => setSelectedSchemes((prev) =>
+                    active ? prev.filter((x) => x !== s.name) : [...prev, s.name]
+                  )}
+                >
+                  <Text style={[styles.recChipText, active && styles.recChipTextActive]}>{s.name}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.recSubLabel, { marginTop: 10 }]}>Recommended Banks</Text>
+          <View style={styles.recChipsWrap}>
+            {RECOMMENDED_BANKS.map((bank) => {
+              const active = selectedBanks.includes(bank);
+              return (
+                <TouchableOpacity
+                  key={bank}
+                  style={[styles.recChip, active && styles.recChipActive]}
+                  onPress={() => setSelectedBanks((prev) =>
+                    active ? prev.filter((x) => x !== bank) : [...prev, bank]
+                  )}
+                >
+                  <Text style={[styles.recChipText, active && styles.recChipTextActive]}>{bank}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.recSubLabel, { marginTop: 10 }]}>Note to User (optional)</Text>
+          <TextInput
+            style={styles.recNoteInput}
+            value={recNote}
+            onChangeText={setRecNote}
+            placeholder="Add a personal note for this user…"
+            placeholderTextColor={colors.textPlaceholder}
+            multiline
+            numberOfLines={2}
+            textAlignVertical="top"
+          />
+
+          <TouchableOpacity
+            style={[styles.recSaveBtn, savingRec && { opacity: 0.6 }]}
+            onPress={saveRecommendations}
+            disabled={savingRec}
+          >
+            {savingRec
+              ? <ActivityIndicator color="#FFF" size="small" />
+              : <Text style={styles.recSaveBtnText}>Save Recommendations</Text>
+            }
+          </TouchableOpacity>
+        </SectionCard>
 
         {/* Notes + Follow-up */}
         <SectionCard title="Notes & Follow-up">
@@ -405,6 +631,50 @@ const styles = StyleSheet.create({
   },
   consultType: { fontSize: 13, fontFamily: fonts.medium, color: colors.text },
   consultMeta: { fontSize: 11, fontFamily: fonts.regular, color: colors.textDim },
+
+  // Document rows
+  docRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border, flexWrap: "wrap",
+  },
+  docName: { fontSize: 13, fontFamily: fonts.medium, color: colors.text },
+  docDate: { fontSize: 11, fontFamily: fonts.regular, color: colors.textDim, marginTop: 1 },
+  docStatusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill },
+  docStatusText: { fontSize: 11, fontFamily: fonts.bold, textTransform: "capitalize" },
+  docActionBtn: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill,
+  },
+  docActionText: { fontSize: 11, fontFamily: fonts.bold },
+
+  // Recommendations
+  existingRecBanner: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "#D1FAE5", borderRadius: radius.lg,
+    paddingHorizontal: 10, paddingVertical: 6, marginBottom: 12, alignSelf: "flex-start",
+  },
+  existingRecText: { fontSize: 11, fontFamily: fonts.medium, color: "#065F46" },
+  recSubLabel: {
+    fontSize: 10, fontFamily: fonts.bold, color: colors.textMuted,
+    textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6,
+  },
+  recChipsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  recChip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill,
+    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface2,
+  },
+  recChipActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  recChipText: { fontSize: 12, fontFamily: fonts.medium, color: colors.textMuted },
+  recChipTextActive: { color: colors.primaryDark, fontFamily: fonts.bold },
+  recNoteInput: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.xl,
+    padding: 12, fontSize: 13, fontFamily: fonts.regular, color: colors.text,
+    minHeight: 60, backgroundColor: colors.surface2, marginBottom: 12,
+  },
+  recSaveBtn: {
+    backgroundColor: colors.primary, borderRadius: radius.xl,
+    paddingVertical: 12, alignItems: "center",
+  },
+  recSaveBtnText: { fontSize: 14, fontFamily: fonts.displayBold, color: "#FFF" },
 
   // Modal
   modalBg: { flex: 1, backgroundColor: colors.overlay, justifyContent: "flex-end" },

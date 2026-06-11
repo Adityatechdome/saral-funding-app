@@ -11,9 +11,6 @@ export default function Splash() {
 
   useEffect(() => {
     (async () => {
-      const lang = await storage.getItem<string>("lang", "");
-      if (!lang) return router.replace("/language");
-
       const token = await storage.getItem<string>("auth_token", "");
       if (!token) return router.replace("/login");
 

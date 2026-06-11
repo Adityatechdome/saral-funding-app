@@ -217,6 +217,9 @@ const BANKS = [
 // ── In-memory state ─────────────────────────────────────────────────────────
 
 const sessions = new Map(); // token → user
+const setuConsents = new Map(); // consentId → { status, user_id, created_at }
+const userDocuments = []; // { id, user_id, doc_type, status, created_at }
+const adminRecommendations = new Map(); // user_id → { schemes, banks, note, created_at }
 const consultations = [];
 const notifications = [
   {
@@ -267,10 +270,44 @@ function getUser(req) {
 
 function readBody(req) {
   return new Promise((resolve) => {
-    let data = "";
-    req.on("data", (chunk) => (data += chunk));
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", () => {
-      try { resolve(JSON.parse(data || "{}")); }
+      const raw = Buffer.concat(chunks);
+      const contentType = req.headers["content-type"] || "";
+
+      // Multipart form-data — extract text fields only (skip file bytes)
+      if (contentType.includes("multipart/form-data")) {
+        const boundary = contentType.split("boundary=")[1];
+        if (boundary) {
+          const result = {};
+          const text = raw.toString("latin1");
+          const parts = text.split(`--${boundary}`);
+          for (const part of parts) {
+            const nameMatch = part.match(/Content-Disposition:[^\r\n]*name="([^"]+)"/i);
+            if (!nameMatch) continue;
+            const fieldName = nameMatch[1];
+            // Value is after the blank line (\r\n\r\n)
+            const valueStart = part.indexOf("\r\n\r\n");
+            if (valueStart === -1) continue;
+            const rawValue = part.slice(valueStart + 4);
+            // Strip trailing \r\n--
+            const value = rawValue.replace(/\r\n--$/, "").trim();
+            // For file fields, just store the original filename from Content-Disposition
+            const filenameMatch = part.match(/filename="([^"]+)"/i);
+            if (filenameMatch) {
+              result[fieldName] = { filename: filenameMatch[1] };
+            } else {
+              result[fieldName] = value;
+            }
+          }
+          return resolve(result);
+        }
+        return resolve({});
+      }
+
+      // Regular JSON body
+      try { resolve(JSON.parse(raw.toString() || "{}")); }
       catch { resolve({}); }
     });
   });
@@ -554,6 +591,301 @@ async function handle(req, res) {
   // ── Language ──────────────────────────────────────────────────────────────
   if (path === "/language" && method === "POST") {
     return json(res, 200, { ok: true });
+  }
+
+  // ── Setu Account Aggregator ───────────────────────────────────────────────
+  if (path === "/setu/aa/status" && method === "GET") {
+    const user = getUser(req);
+    if (!user) return json(res, 401, { detail: "Unauthorized" });
+    // Check if this user has an active consent
+    let linked = false;
+    for (const [, c] of setuConsents) {
+      if (c.user_id === user.id && c.status === "ACTIVE") { linked = true; break; }
+    }
+    return json(res, 200, { aa_linked: linked, aa_status: linked ? "ACTIVE" : null });
+  }
+
+  if (path === "/setu/aa/consent" && method === "POST") {
+    const user = getUser(req);
+    if (!user) return json(res, 401, { detail: "Unauthorized" });
+    const consentId = `mock-consent-${Date.now()}`;
+    // Store pending consent in sessions map so status can be polled
+    setuConsents.set(consentId, { status: "PENDING", user_id: user.id, created_at: new Date().toISOString() });
+    return json(res, 200, {
+      consent_id: consentId,
+      // In real flow this is a Setu-hosted URL; for mock we send back to our redirect
+      consent_url: `http://localhost:3001/setu/aa/mock-flow?id=${consentId}`,
+      status: "PENDING",
+    });
+  }
+
+  if (path.startsWith("/setu/aa/consent/") && path.endsWith("/status") && method === "GET") {
+    const consentId = path.split("/")[4];
+    const consent = setuConsents.get(consentId);
+    if (!consent) return json(res, 404, { detail: "Consent not found" });
+    return json(res, 200, { consent_id: consentId, status: consent.status });
+  }
+
+  // Mock UI page — user "approves" here in the WebView
+  if (path.startsWith("/setu/aa/mock-flow") && method === "GET") {
+    const urlObj = new URL(`http://localhost:3001${req.url}`);
+    const consentId = urlObj.searchParams.get("id");
+    const consent = consentId && setuConsents.get(consentId);
+    if (!consent) {
+      res.writeHead(404, { "Content-Type": "text/html" });
+      return res.end("<h2>Consent not found</h2>");
+    }
+    // Auto-approve after 2 seconds (simulate user tapping "Allow" in AA app)
+    setTimeout(() => {
+      if (setuConsents.has(consentId)) {
+        setuConsents.get(consentId).status = "ACTIVE";
+      }
+    }, 2000);
+    res.writeHead(200, { "Content-Type": "text/html" });
+    return res.end(`<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: -apple-system, sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; margin:0; background:#F0FDF4; }
+    .card { background:#fff; border-radius:16px; padding:32px; max-width:360px; text-align:center; box-shadow:0 4px 24px rgba(0,0,0,0.1); }
+    h2 { color:#166534; margin-bottom:8px; }
+    p { color:#6B7280; font-size:14px; line-height:1.6; }
+    .bank { background:#DCFCE7; border-radius:8px; padding:12px; margin:16px 0; font-size:13px; color:#166534; }
+    .btn { background:#16A34A; color:#fff; border:none; border-radius:12px; padding:14px 32px; font-size:16px; cursor:pointer; width:100%; margin-top:8px; }
+    .deny { background:#F3F4F6; color:#374151; margin-top:8px; }
+    .spinner { display:none; font-size:13px; color:#16A34A; margin-top:16px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div style="font-size:48px; margin-bottom:8px;">🏦</div>
+    <h2>Link Your Bank Account</h2>
+    <p>Saral Funding wants to access your bank statements to assess your loan eligibility.</p>
+    <div class="bank">
+      <strong>Data requested:</strong><br>
+      Bank statements • Last 12 months<br>
+      Savings / Current accounts
+    </div>
+    <p style="font-size:12px; color:#9CA3AF;">Your data is protected under RBI's Account Aggregator framework. You can revoke access anytime.</p>
+    <button class="btn" onclick="approve()">Allow Access</button>
+    <button class="btn deny" onclick="deny()">Deny</button>
+    <div class="spinner" id="spinner">Processing consent… redirecting back to app</div>
+  </div>
+  <script>
+    function approve() {
+      document.querySelector('.btn').disabled = true;
+      document.getElementById('spinner').style.display = 'block';
+      // Tell mock server to mark as ACTIVE
+      fetch('/setu/aa/mock-approve?id=${consentId}', { method: 'POST' });
+      setTimeout(() => {
+        window.location.href = 'saral://setu-redirect?consent_id=${consentId}&status=ACTIVE';
+      }, 1500);
+    }
+    function deny() {
+      fetch('/setu/aa/mock-approve?id=${consentId}&denied=1', { method: 'POST' });
+      window.location.href = 'saral://setu-redirect?consent_id=${consentId}&status=REJECTED';
+    }
+  </script>
+</body>
+</html>`);
+  }
+
+  if (path.startsWith("/setu/aa/mock-approve") && method === "POST") {
+    const urlObj = new URL(`http://localhost:3001${req.url}`);
+    const consentId = urlObj.searchParams.get("id");
+    const denied = urlObj.searchParams.get("denied") === "1";
+    if (consentId && setuConsents.has(consentId)) {
+      setuConsents.get(consentId).status = denied ? "REJECTED" : "ACTIVE";
+    }
+    return json(res, 200, { ok: true });
+  }
+
+  if (path.startsWith("/setu/aa/data/") && method === "GET") {
+    const consentId = path.split("/")[4];
+    const consent = setuConsents.get(consentId);
+    if (!consent) return json(res, 404, { detail: "Consent not found" });
+    if (consent.status !== "ACTIVE") return json(res, 400, { detail: "Consent not yet active" });
+    // Mock AA financial data — realistic MSME bank statement summary
+    return json(res, 200, {
+      consent_id: consentId,
+      financial_profile: {
+        monthly_avg_balance: 187500,
+        avg_monthly_credits: 423000,
+        avg_monthly_debits: 385000,
+        estimated_annual_turnover: 5076000,
+        num_accounts: 2,
+        has_salary: false,
+        has_business_credits: true,
+        data_months: 12,
+      },
+      accounts: [
+        { name: "SBI Current Account", number: "****4521", balance: 285000, type: "CURRENT" },
+        { name: "HDFC Savings Account", number: "****8843", balance: 90000, type: "SAVINGS" },
+      ],
+    });
+  }
+
+  // ── Documents ──────────────────────────────────────────────────────────────
+
+  // GET /documents/me — list current user's docs
+  if (path === "/documents/me" && method === "GET") {
+    const user = getUser(req);
+    if (!user) return json(res, 401, { detail: "Unauthorized" });
+    const docs = userDocuments.filter((d) => d.user_id === user.id);
+    return json(res, 200, docs);
+  }
+
+  // POST /documents/upload — supports both multipart/form-data and JSON (backward compat)
+  if (path === "/documents/upload" && method === "POST") {
+    const user = getUser(req);
+    if (!user) return json(res, 401, { detail: "Unauthorized" });
+
+    // body.doc_type may be a string (JSON) or a string extracted from multipart
+    const doc_type = typeof body.doc_type === "string" ? body.doc_type : null;
+    if (!doc_type) return json(res, 400, { detail: "doc_type required" });
+
+    // Derive filename: from picked file if multipart, else synthesize
+    const uploadedFile = body.file;
+    const file_name =
+      uploadedFile && uploadedFile.filename
+        ? uploadedFile.filename
+        : `${doc_type.replace(/\s+/g, "_").toLowerCase()}.pdf`;
+
+    const slug = doc_type.replace(/\s+/g, "-").toLowerCase();
+    const docId = `doc-${Date.now()}`;
+    const fake_blob_url = `https://saralstorage.blob.core.windows.net/saral-documents/users/${user.id}/${slug}-${docId}.pdf`;
+
+    const doc = {
+      id: docId,
+      user_id: user.id,
+      doc_type,
+      status: "pending",
+      created_at: new Date().toISOString(),
+      file_name,
+      blob_url: fake_blob_url,   // stored internally
+    };
+    userDocuments.push(doc);
+    // Don't expose blob_url to the client — return only safe fields
+    const { blob_url: _bv, ...safeDoc } = doc;
+    return json(res, 200, safeDoc);
+  }
+
+  // GET /documents/:id/download — user: returns a fake SAS URL
+  if (path.match(/^\/documents\/[^/]+\/download$/) && method === "GET") {
+    const user = getUser(req);
+    if (!user) return json(res, 401, { detail: "Unauthorized" });
+    const docId = path.split("/")[2];
+    const doc = userDocuments.find((d) => d.id === docId && d.user_id === user.id);
+    if (!doc) return json(res, 404, { detail: "Document not found" });
+    const fake_sas = doc.blob_url
+      ? `${doc.blob_url}?sv=2023-01-03&se=${new Date(Date.now() + 3600000).toISOString()}&sr=b&sp=r&sig=mock`
+      : `https://saralstorage.blob.core.windows.net/saral-documents/mock/${docId}.pdf?sv=2023-01-03&sig=mock`;
+    return json(res, 200, { url: fake_sas, expires_in: 3600 });
+  }
+
+  // GET /admin/documents/:id/download — admin: returns a fake SAS URL
+  if (path.match(/^\/admin\/documents\/[^/]+\/download$/) && method === "GET") {
+    const docId = path.split("/")[3];
+    const doc = userDocuments.find((d) => d.id === docId);
+    if (!doc) return json(res, 404, { detail: "Document not found" });
+    const fake_sas = doc.blob_url
+      ? `${doc.blob_url}?sv=2023-01-03&se=${new Date(Date.now() + 3600000).toISOString()}&sr=b&sp=r&sig=mock`
+      : `https://saralstorage.blob.core.windows.net/saral-documents/mock/${docId}.pdf?sv=2023-01-03&sig=mock`;
+    return json(res, 200, { url: fake_sas, expires_in: 3600 });
+  }
+
+  // DELETE /documents/:id — delete a pending doc
+  if (path.match(/^\/documents\/[^/]+$/) && method === "DELETE") {
+    const user = getUser(req);
+    if (!user) return json(res, 401, { detail: "Unauthorized" });
+    const docId = path.split("/")[2];
+    const idx = userDocuments.findIndex((d) => d.id === docId && d.user_id === user.id);
+    if (idx === -1) return json(res, 404, { detail: "Document not found" });
+    if (userDocuments[idx].status !== "pending") return json(res, 400, { detail: "Only pending docs can be deleted" });
+    userDocuments.splice(idx, 1);
+    return json(res, 200, { ok: true });
+  }
+
+  // GET /admin/leads/:id — lead detail (uses user id as lead id in mock)
+  if (path.match(/^\/admin\/leads\/[^/]+$/) && method === "GET") {
+    const lid = path.split("/").pop();
+    return json(res, 200, {
+      id: lid, user_id: lid,
+      full_name: "Rajesh Kumar", mobile: "9999999999", state: "Gujarat", district: "Surat",
+      business_stage: "existing", industry: "Manufacturing", funding_required: 2500000,
+      annual_turnover: 1500000, employees: 12, gst_available: true, udyam_available: false,
+      stage: "documentation", notes: "Interested in PMEGP scheme", assigned_to: "Advisor 1",
+      created_at: new Date().toISOString(),
+      scheme_matches: [
+        { id: "pmegp", name: "PMEGP", score: 91 },
+        { id: "cgtmse", name: "CGTMSE", score: 87 },
+        { id: "mudra-shishu", name: "Mudra Loan", score: 76 },
+      ],
+    });
+  }
+
+  // GET /admin/users/:uid/documents — admin view user docs
+  if (path.match(/^\/admin\/users\/[^/]+\/documents$/) && method === "GET") {
+    const parts = path.split("/");
+    const uid = parts[3];
+    const docs = userDocuments.filter((d) => d.user_id === uid);
+    // Seed a few mock docs if none exist
+    if (docs.length === 0) {
+      const seeded = [
+        { id: `doc-seed-1-${uid}`, user_id: uid, doc_type: "Aadhaar Card", status: "verified", created_at: new Date(Date.now() - 86400000 * 3).toISOString(), file_name: "aadhaar.pdf" },
+        { id: `doc-seed-2-${uid}`, user_id: uid, doc_type: "PAN Card", status: "pending", created_at: new Date(Date.now() - 86400000).toISOString(), file_name: "pan.pdf" },
+        { id: `doc-seed-3-${uid}`, user_id: uid, doc_type: "GST Certificate", status: "pending", created_at: new Date().toISOString(), file_name: "gst.pdf" },
+      ];
+      seeded.forEach((d) => userDocuments.push(d));
+      return json(res, 200, seeded);
+    }
+    return json(res, 200, docs);
+  }
+
+  // POST /admin/documents/:docId/status — verify or reject
+  if (path.match(/^\/admin\/documents\/[^/]+\/status$/) && method === "POST") {
+    const docId = path.split("/")[3];
+    const { status } = body;
+    if (!["verified", "rejected"].includes(status)) return json(res, 400, { detail: "status must be verified or rejected" });
+    const doc = userDocuments.find((d) => d.id === docId);
+    if (!doc) return json(res, 404, { detail: "Document not found" });
+    doc.status = status;
+    return json(res, 200, doc);
+  }
+
+  // ── Admin Recommendations ──────────────────────────────────────────────────
+
+  // POST /admin/users/:uid/recommendations — save recs
+  if (path.match(/^\/admin\/users\/[^/]+\/recommendations$/) && method === "POST") {
+    const parts = path.split("/");
+    const uid = parts[3];
+    const rec = {
+      user_id: uid,
+      schemes: body.schemes || [],
+      banks: body.banks || [],
+      note: body.note || "",
+      created_at: new Date().toISOString(),
+    };
+    adminRecommendations.set(uid, rec);
+    return json(res, 200, rec);
+  }
+
+  // GET /admin/users/:uid/recommendations — get saved recs
+  if (path.match(/^\/admin\/users\/[^/]+\/recommendations$/) && method === "GET") {
+    const uid = path.split("/")[3];
+    const rec = adminRecommendations.get(uid) || null;
+    if (!rec) return json(res, 404, { detail: "No recommendations yet" });
+    return json(res, 200, rec);
+  }
+
+  // GET /recommendations/me — user fetches their own admin recs
+  if (path === "/recommendations/me" && method === "GET") {
+    const user = getUser(req);
+    if (!user) return json(res, 401, { detail: "Unauthorized" });
+    const rec = adminRecommendations.get(user.id) || null;
+    if (!rec) return json(res, 404, { detail: "No recommendations yet" });
+    return json(res, 200, rec);
   }
 
   // ── 404 ───────────────────────────────────────────────────────────────────

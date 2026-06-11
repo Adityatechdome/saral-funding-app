@@ -9,7 +9,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
-  Users, Landmark, Phone, Target, Bell, BarChart3,
+  Users, Phone, Target, Landmark,
   TrendingUp, MessageSquare, ChevronRight, Percent, Eye, Settings,
 } from "lucide-react-native";
 
@@ -27,12 +27,9 @@ type Overview = {
 };
 
 const ALL_MODULES = [
-  { id: "users", label: "Users", sub: "Manage & export", Icon: Users, color: colors.primarySoft, iconColor: colors.primaryDark },
-  { id: "schemes", label: "Schemes", sub: "Create & manage", Icon: Landmark, color: "#DBEAFE", iconColor: "#1D4ED8" },
+  { id: "users", label: "Users", sub: "Manage & view", Icon: Users, color: colors.primarySoft, iconColor: colors.primaryDark },
   { id: "consultations", label: "Consultations", sub: "Track & update", Icon: Phone, color: "#EDE9FE", iconColor: "#5B21B6" },
   { id: "leads", label: "CRM / Leads", sub: "Pipeline & stages", Icon: Target, color: "#FEF3C7", iconColor: "#92400E" },
-  { id: "notifications", label: "Notifications", sub: "Broadcast messages", Icon: Bell, color: "#FEE2E2", iconColor: "#DC2626" },
-  { id: "analytics", label: "Analytics", sub: "Trends & insights", Icon: BarChart3, color: colors.surfaceAlt, iconColor: colors.textMuted },
   { id: "settings", label: "Settings", sub: "App configuration", Icon: Settings, color: "#F5F3FF", iconColor: "#6D28D9" },
 ];
 

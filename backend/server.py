@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Query, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -877,6 +877,206 @@ async def seed_db():
     else:
         # ensure role is super_admin
         await db.users.update_one({"mobile": admin_mobile}, {"$set": {"role": "super_admin"}})
+
+
+
+# ── Setu Account Aggregator ─────────────────────────────────────────────────
+
+from setu_service import create_consent, get_consent_status, fetch_fi_data, extract_financial_profile, enrich_business_profile_from_aa
+from azure_storage import upload_to_azure, delete_from_azure, get_sas_url
+
+
+class SetuConsentIn(BaseModel):
+    mobile: str
+
+
+@api_router.post("/setu/aa/consent")
+async def setu_create_consent(body: SetuConsentIn, user_id: str = Depends(get_current_user_id)):
+    try:
+        result = await create_consent(body.mobile, user_id)
+        # Persist consent id on user record so we can reference it later
+        await db.users.update_one({"id": user_id}, {"$set": {"aa_consent_id": result["consent_id"], "aa_status": "PENDING"}})
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/setu/aa/consent/{consent_id}/status")
+async def setu_consent_status(consent_id: str, user_id: str = Depends(get_current_user_id)):
+    try:
+        result = await get_consent_status(consent_id)
+        if result["status"] == "ACTIVE":
+            await db.users.update_one({"id": user_id}, {"$set": {"aa_status": "ACTIVE"}})
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/setu/aa/data/{consent_id}")
+async def setu_fetch_data(consent_id: str, user_id: str = Depends(get_current_user_id)):
+    try:
+        fi_data = await fetch_fi_data(consent_id)
+        fp = extract_financial_profile(fi_data)
+        # Enrich the user's business profile with AA data
+        bp_doc = await db.business_profiles.find_one({"user_id": user_id}) or {}
+        enriched = enrich_business_profile_from_aa(bp_doc, fp)
+        await db.business_profiles.update_one({"user_id": user_id}, {"$set": enriched}, upsert=True)
+        return {"financial_profile": fp, "updated": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/setu/aa/status")
+async def setu_aa_status(user_id: str = Depends(get_current_user_id)):
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "aa_linked": user.get("aa_status") == "ACTIVE",
+        "aa_status": user.get("aa_status"),
+        "aa_consent_id": user.get("aa_consent_id"),
+    }
+
+
+# ── Document endpoints ────────────────────────────────────────────────────────
+
+class DocumentStatusIn(BaseModel):
+    status: str  # "verified" | "rejected"
+
+class AdminRecommendationIn(BaseModel):
+    schemes: List[str] = []
+    banks: List[str] = []
+    note: Optional[str] = ""
+
+
+@api_router.post("/documents/upload")
+async def upload_document(
+    doc_type: str = Form(...),
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    file_bytes = await file.read()
+
+    # Validate size: max 10 MB
+    if len(file_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Max 10MB.")
+
+    result = await upload_to_azure(file_bytes, doc_type, user["id"], file.filename or "upload")
+
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "doc_type": doc_type,
+        "status": "pending",
+        "created_at": now_iso(),
+        "file_name": file.filename or (doc_type.replace(" ", "_").lower() + ".pdf"),
+        "blob_name": result["blob_name"],
+        "blob_url": result["blob_url"],  # private URL, not for direct client use
+    }
+    await db.documents.insert_one({**doc, "_id": doc["id"]})
+    # Never expose blob_name to the frontend
+    return {k: v for k, v in doc.items() if k not in ("blob_name", "blob_url")}
+
+
+@api_router.get("/documents/me")
+async def list_my_documents(user=Depends(get_current_user)):
+    docs = await db.documents.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
+    return docs
+
+
+@api_router.delete("/documents/{doc_id}")
+async def delete_document(doc_id: str, user=Depends(get_current_user)):
+    doc = await db.documents.find_one({"id": doc_id, "user_id": user["id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if doc.get("status") != "pending":
+        raise HTTPException(status_code=400, detail="Only pending documents can be deleted")
+    # Also remove the blob from Azure if present
+    if doc.get("blob_name"):
+        await delete_from_azure(doc["blob_name"])
+    await db.documents.delete_one({"id": doc_id})
+    return {"ok": True}
+
+
+@api_router.get("/documents/{doc_id}/download")
+async def get_document_download_url(doc_id: str, user=Depends(get_current_user)):
+    """Return a short-lived SAS URL so the user can download their own document."""
+    doc = await db.documents.find_one({"id": doc_id, "user_id": user["id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not doc.get("blob_name"):
+        raise HTTPException(status_code=404, detail="No file attached to this document")
+    sas_url = get_sas_url(doc["blob_name"])
+    return {"url": sas_url, "expires_in": 3600}
+
+
+@api_router.get("/admin/users/{user_id}/documents")
+async def admin_list_user_documents(user_id: str, admin=Depends(require_admin)):
+    docs = await db.documents.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+    return docs
+
+
+@api_router.post("/admin/documents/{doc_id}/status")
+async def admin_update_doc_status(doc_id: str, payload: DocumentStatusIn, admin=Depends(require_admin)):
+    if payload.status not in ("verified", "rejected"):
+        raise HTTPException(status_code=400, detail="status must be verified or rejected")
+    result = await db.documents.find_one_and_update(
+        {"id": doc_id},
+        {"$set": {"status": payload.status, "updated_at": now_iso()}},
+        return_document=True,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Document not found")
+    result.pop("_id", None)
+    # Don't expose blob_name to admin client either
+    result.pop("blob_name", None)
+    result.pop("blob_url", None)
+    return result
+
+
+@api_router.get("/admin/documents/{doc_id}/download")
+async def admin_get_document_download_url(doc_id: str, admin=Depends(require_admin)):
+    """Admin: return a short-lived SAS URL to download any user's document."""
+    doc = await db.documents.find_one({"id": doc_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not doc.get("blob_name"):
+        raise HTTPException(status_code=404, detail="No file attached to this document")
+    sas_url = get_sas_url(doc["blob_name"])
+    return {"url": sas_url, "expires_in": 3600}
+
+
+@api_router.post("/admin/users/{user_id}/recommendations")
+async def save_admin_recommendations(user_id: str, payload: AdminRecommendationIn, admin=Depends(require_admin)):
+    rec = {
+        "user_id": user_id,
+        "schemes": payload.schemes,
+        "banks": payload.banks,
+        "note": payload.note or "",
+        "created_at": now_iso(),
+    }
+    await db.admin_recommendations.find_one_and_replace(
+        {"user_id": user_id},
+        {**rec, "_id": user_id},
+        upsert=True,
+    )
+    return rec
+
+
+@api_router.get("/admin/users/{user_id}/recommendations")
+async def get_admin_recommendations_for_user(user_id: str, admin=Depends(require_admin)):
+    rec = await db.admin_recommendations.find_one({"user_id": user_id}, {"_id": 0})
+    if not rec:
+        raise HTTPException(status_code=404, detail="No recommendations yet")
+    return rec
+
+
+@api_router.get("/recommendations/me")
+async def get_my_recommendations(user=Depends(get_current_user)):
+    rec = await db.admin_recommendations.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not rec:
+        raise HTTPException(status_code=404, detail="No recommendations yet")
+    return rec
 
 
 app.include_router(api_router)

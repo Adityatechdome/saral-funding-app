@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
 import { View, Text, StyleSheet } from "react-native";
-import { LayoutDashboard, Landmark, Sparkles, CircleUser } from "lucide-react-native";
+import { LayoutDashboard, Briefcase, Sparkles, CircleUser } from "lucide-react-native";
 
 import { colors, fonts } from "@/src/theme";
 
@@ -47,11 +47,17 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="schemes"
+        name="funding-case"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Schemes" focused={focused} Icon={Landmark} />
+            <TabIcon label="My Case" focused={focused} Icon={Briefcase} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="schemes"
+        options={{
+          href: null,
         }}
       />
       <Tabs.Screen

@@ -12,8 +12,8 @@ export type AdminRole = "super_admin" | "manager" | "expert" | "sales_executive"
 
 /** Which modules each role can access. super_admin always gets everything. */
 export const ROLE_PERMISSIONS: Record<string, string[]> = {
-  super_admin: ["users", "schemes", "consultations", "leads", "notifications", "analytics", "settings"],
-  manager: ["users", "consultations", "leads", "analytics"],
+  super_admin: ["users", "consultations", "leads", "settings"],
+  manager: ["users", "consultations", "leads"],
   expert: ["consultations"],
   sales_executive: ["leads"],
   support_executive: ["consultations", "leads"],

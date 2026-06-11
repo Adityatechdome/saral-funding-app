@@ -14,7 +14,6 @@ import { CheckCircle2, Calendar, Clock, Phone, ChevronRight } from "lucide-react
 
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiPost } from "@/src/api";
-import Saathi from "@/src/components/Saathi";
 import { CONSULT_TYPES, TIME_SLOTS } from "@/src/constants";
 import { BackBar } from "@/src/components/StepBar";
 
@@ -44,8 +43,8 @@ function ConfirmationView({ done, onBack }: { done: any; onBack: () => void }) {
     <SafeAreaView style={{ flex: 1, backgroundColor: "#FFF" }} edges={["top", "bottom"]} testID="booking-confirmed">
       <BackBar title="Booking Confirmed" onBack={onBack} />
       <View style={confirmStyles.wrap}>
-        <Animated.View entering={FadeIn.duration(400)} style={{ alignItems: "center", marginBottom: 8 }}>
-          <Saathi expression="celebrating" size={110} animate />
+        <Animated.View entering={FadeIn.duration(400)} style={confirmStyles.checkCircle}>
+          <CheckCircle2 size={48} color="#FFF" strokeWidth={2} />
         </Animated.View>
 
         <Animated.View entering={SlideInUp.delay(200).duration(400)} style={{ alignItems: "center" }}>

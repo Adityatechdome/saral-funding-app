@@ -162,30 +162,7 @@ export default function Dashboard() {
 
         <View style={{ paddingHorizontal: spacing.md }}>
 
-          {/* ── Readiness Action Items ── */}
-          {readiness && readiness.actions.length > 0 && (
-            <View style={styles.card} testID="readiness-actions">
-              <Text style={styles.sectionLabel}>Improve Your Score</Text>
-              {readiness.actions.slice(0, 3).map((a, i) => (
-                <View key={i} style={[styles.actionRow, i < Math.min(readiness.actions.length, 3) - 1 && styles.actionBorder]}>
-                  <View style={styles.actionNum}>
-                    <Text style={styles.actionNumText}>{i + 1}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.actionTitle}>{a.title}</Text>
-                    <Text style={styles.actionDetail} numberOfLines={2}>{a.detail}</Text>
-                  </View>
-                  <View style={[styles.weightPill, a.weight === "High" && styles.weightHigh]}>
-                    <Text style={[styles.weightText, a.weight === "High" && styles.weightTextHigh]}>
-                      {a.weight}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* ── Smart Alerts ── */}
+          {/* ── Smart Alerts (max 2) ── */}
           {alerts.length > 0 && (
             <View style={styles.card} testID="alerts-widget">
               <View style={styles.rowBetween}>
@@ -194,7 +171,7 @@ export default function Dashboard() {
                   <Text style={styles.viewAll}>View all</Text>
                 </TouchableOpacity>
               </View>
-              {alerts.map((n: any) => (
+              {alerts.slice(0, 2).map((n: any) => (
                 <View key={n.id} style={styles.alertRow}>
                   <View style={styles.alertPulse} />
                   <View style={{ flex: 1 }}>
@@ -269,7 +246,7 @@ export default function Dashboard() {
           {/* ── Recommended Schemes ── */}
           <View style={styles.rowBetween}>
             <Text style={styles.sectionTitle}>Recommended Schemes</Text>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/schemes")} testID="view-all-btn">
+            <TouchableOpacity onPress={() => router.push("/(tabs)/funding-case")} testID="view-all-btn">
               <Text style={styles.viewAll}>View all</Text>
             </TouchableOpacity>
           </View>
@@ -526,6 +503,43 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 2,
     lineHeight: 17,
+  },
+
+  // AA / Link Bank
+  aaBannerCard: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary + "40",
+  },
+  aaBannerTitle: {
+    fontSize: 14,
+    fontFamily: fonts.semiBold,
+    color: colors.primaryDark,
+  },
+  aaBannerSub: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: colors.primaryDark,
+    opacity: 0.75,
+    marginTop: 2,
+  },
+  aaIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.lg,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  aaLinkedTitle: {
+    fontSize: 14,
+    fontFamily: fonts.semiBold,
+    color: colors.text,
+  },
+  aaLinkedSub: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: colors.textMuted,
+    marginTop: 2,
   },
 
   // Bank card

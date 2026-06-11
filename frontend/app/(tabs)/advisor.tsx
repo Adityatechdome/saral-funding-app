@@ -19,7 +19,7 @@ import Animated, {
   useAnimatedStyle,
 } from "react-native-reanimated";
 import {
-  ArrowUp, Trash2, MessageSquare, Target, ChevronRight,
+  ArrowUp, Trash2, ChevronRight,
   FileText, Route, CheckCircle2, Sparkles, Building2, Landmark,
 } from "lucide-react-native";
 
@@ -65,7 +65,6 @@ export default function Advisor() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [mode, setMode] = useState<"chat" | "strategy">("chat");
   const listRef = useRef<FlatList>(null);
 
   useEffect(() => {
@@ -73,6 +72,16 @@ export default function Advisor() {
       .then((d) => setMessages((d.messages || []).map((m) => ({ ...m, ts: m.ts || Date.now() }))))
       .catch(() => {});
   }, []);
+
+  // Auto-detect if user wants a full funding strategy
+  function isStrategyQuery(msg: string): boolean {
+    const lower = msg.toLowerCase();
+    return (
+      lower.includes("plan") || lower.includes("strategy") || lower.includes("roadmap") ||
+      lower.includes("how do i") || lower.includes("step by step") || lower.includes("what should i") ||
+      lower.includes("help me get") || lower.includes("full plan") || lower.includes("complete guide")
+    );
+  }
 
   const send = async (text?: string) => {
     const msg = (text ?? input).trim();
@@ -82,7 +91,7 @@ export default function Advisor() {
     setMessages((m) => [...m, { role: "user", content: msg, ts }]);
     setSending(true);
     try {
-      if (mode === "strategy") {
+      if (isStrategyQuery(msg)) {
         const r = await apiPost<any>("/advisor/structured", { query: msg, language: getLang() });
         const followUps = [
           "What documents do I need?",
@@ -142,26 +151,6 @@ export default function Advisor() {
         )}
       </View>
 
-      {/* Mode selector */}
-      <View style={styles.modeRow}>
-        {(["chat", "strategy"] as const).map((m) => (
-          <TouchableOpacity
-            key={m}
-            testID={`mode-${m}`}
-            style={[styles.modeBtn, mode === m && styles.modeBtnActive]}
-            onPress={() => setMode(m)}
-          >
-            {m === "chat"
-              ? <MessageSquare size={14} color={mode === m ? colors.primaryDark : colors.textDim} strokeWidth={2} />
-              : <Target size={14} color={mode === m ? colors.primaryDark : colors.textDim} strokeWidth={2} />
-            }
-            <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>
-              {m === "chat" ? "Quick Chat" : "Funding Strategy"}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -212,15 +201,9 @@ export default function Advisor() {
               <Saathi
                 expression="explaining"
                 size={100}
-                message={mode === "strategy"
-                  ? "Tell me your funding goal and I'll build a complete roadmap!"
-                  : "Hi! I'm Saathi. Ask me anything about funding."}
+                message="Hi! I'm Saathi. Ask me anything about funding."
               />
-              <Text style={[styles.emptyLabel, { marginTop: 16 }]}>
-                {mode === "strategy"
-                  ? "Describe your funding goal to get a complete roadmap"
-                  : "Try asking…"}
-              </Text>
+              <Text style={[styles.emptyLabel, { marginTop: 16 }]}>Try asking…</Text>
               {SUGGESTIONS.map((s) => (
                 <TouchableOpacity
                   key={s}
@@ -246,11 +229,7 @@ export default function Advisor() {
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder={
-              mode === "strategy"
-                ? "Describe your funding goal…"
-                : "Ask about schemes, subsidies, loans…"
-            }
+            placeholder="Ask about schemes, subsidies, loans…"
             placeholderTextColor={colors.textPlaceholder}
             multiline
             maxLength={500}
@@ -526,19 +505,6 @@ const styles = StyleSheet.create({
     width: 34, height: 34, borderRadius: radius.lg, borderWidth: 1,
     borderColor: colors.border, alignItems: "center", justifyContent: "center",
   },
-  modeRow: {
-    flexDirection: "row", gap: 8, paddingHorizontal: spacing.md,
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  modeBtn: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    paddingVertical: 9, borderRadius: radius.pill, borderWidth: 1,
-    borderColor: colors.border, backgroundColor: "#FFF",
-  },
-  modeBtnActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
-  modeText: { fontSize: 13, fontFamily: fonts.medium, color: colors.textDim },
-  modeTextActive: { fontFamily: fonts.semiBold, color: colors.primaryDark },
-
   userMsgWrap: { alignItems: "flex-end", marginVertical: 4 },
   userBubble: {
     backgroundColor: colors.primary, borderRadius: radius.xl, borderBottomRightRadius: 6,
