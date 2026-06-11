@@ -19,7 +19,7 @@ from bank_service import recommend_banks
 from readiness_service import compute_readiness
 from alerts_service import evaluate_alerts
 from analytics_service import compute_overview, popular_schemes, state_distribution, consultation_status, lead_pipeline, daily_user_trend, consultation_trend
-from auth_service import verify_firebase_id_token, is_enabled as firebase_enabled
+from auth_service import send_otp as twilio_send_otp, verify_otp as twilio_verify_otp, is_enabled as firebase_enabled
 
 # ---- DB ----
 mongo_url = os.environ['MONGO_URL']
@@ -196,9 +196,15 @@ async def root():
 async def send_otp(req: OtpRequest):
     if not req.mobile or len(req.mobile) < 10:
         raise HTTPException(status_code=400, detail="Invalid mobile number")
-    if firebase_enabled():
-        return {"success": True, "mode": "firebase", "message": "Use Firebase Phone Auth on client. Send id_token to /auth/firebase-verify."}
-    return {"success": True, "mode": "mock", "message": "OTP sent (use 123456 in this MVP)", "mock_code": "123456"}
+    # Normalize to E.164 — add +91 if not already prefixed
+    mobile = req.mobile.strip()
+    if not mobile.startswith("+"):
+        mobile = "+91" + mobile.lstrip("0")
+    try:
+        result = twilio_send_otp(mobile)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 async def _create_or_get_user(mobile: str, language: str) -> Dict[str, Any]:
@@ -225,8 +231,12 @@ async def _create_or_get_user(mobile: str, language: str) -> Dict[str, Any]:
 
 @api_router.post("/auth/verify-otp")
 async def verify_otp(req: OtpVerify):
-    if req.code != "123456":
-        raise HTTPException(status_code=400, detail="Invalid OTP. Use 123456 in this MVP.")
+    mobile = req.mobile.strip()
+    if not mobile.startswith("+"):
+        mobile = "+91" + mobile.lstrip("0")
+    approved = twilio_verify_otp(mobile, req.code)
+    if not approved:
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP. Please try again.")
     user = await _create_or_get_user(req.mobile, req.language or "en")
     return {"token": user["id"], "user": UserOut(**user).dict()}
 
