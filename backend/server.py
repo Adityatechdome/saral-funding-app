@@ -965,15 +965,14 @@ async def seed_db():
     # Ensure indexes first (non-blocking, background=True)
     await _ensure_indexes()
 
-    if await db.schemes.count_documents({}) == 0:
-        for s in SCHEMES_SEED:
-            s = {**s, "disabled": False}
-            await db.schemes.insert_one(s)
-        logging.info(f"Seeded {len(SCHEMES_SEED)} schemes")
-    if await db.banks.count_documents({}) == 0:
-        for b in BANKS_SEED:
-            await db.banks.insert_one(b.copy())
-        logging.info(f"Seeded {len(BANKS_SEED)} banks")
+    # Upsert all seed data so new entries are added on every deploy
+    for s in SCHEMES_SEED:
+        doc = {**s, "disabled": s.get("disabled", False)}
+        await db.schemes.update_one({"id": doc["id"]}, {"$setOnInsert": doc}, upsert=True)
+    logging.info(f"Upserted {len(SCHEMES_SEED)} schemes")
+    for b in BANKS_SEED:
+        await db.banks.update_one({"id": b["id"]}, {"$setOnInsert": b.copy()}, upsert=True)
+    logging.info(f"Upserted {len(BANKS_SEED)} banks")
     # seed super admin (idempotent)
     admin_mobile = "9000000000"
     existing_admin = await db.users.find_one({"mobile": admin_mobile})
