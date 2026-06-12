@@ -533,6 +533,46 @@ async def book_consultation(body: ConsultationIn, user=Depends(get_current_user)
         "body": f"Your {doc['consultation_type']} on {doc['date']} at {doc['time_slot']} is booked. Our advisor will reach out soon.",
         "type": "reminder", "read": False, "created_at": now_iso(),
     })
+
+    # --- push confirmation to the user ---
+    send_push_to_user(
+        user,
+        "Consultation Booked ✅",
+        f"Your {doc['consultation_type']} on {doc['date']} at {doc['time_slot']} is confirmed. We'll be in touch soon!",
+        {"screen": "consultations"},
+    )
+
+    # --- notify all admin users via push ---
+    admin_users = await db.users.find(
+        {"role": {"$in": list(ADMIN_ROLES)}},
+        {"_id": 0, "push_token": 1}
+    ).to_list(200)
+    admin_tokens = [u["push_token"] for u in admin_users if u.get("push_token")]
+    if admin_tokens:
+        user_name = user.get("full_name") or user.get("mobile", "Someone")
+        send_push(
+            admin_tokens,
+            "New Consultation Booked 📅",
+            f"{user_name} booked a {doc['consultation_type']} on {doc['date']} at {doc['time_slot']}.",
+            {"screen": "admin-consultations", "consultation_id": cid},
+        )
+
+    # --- WhatsApp alert to team number ---
+    cfg = await db.admin_config.find_one({}, {"_id": 0}) or {}
+    team_wa = cfg.get("whatsapp_number")
+    if team_wa:
+        user_name = user.get("full_name") or user.get("mobile", "A user")
+        user_mobile = user.get("mobile", "")
+        send_whatsapp(
+            team_wa,
+            f"📅 *New Consultation Booked*\n"
+            f"Name: {user_name}\n"
+            f"Mobile: {user_mobile}\n"
+            f"Type: {doc['consultation_type']}\n"
+            f"Date: {doc['date']} at {doc['time_slot']}\n"
+            f"Notes: {doc.get('notes') or '—'}"
+        )
+
     doc.pop("_id", None)
     return doc
 
@@ -957,6 +997,7 @@ async def seed_db():
 from setu_service import create_consent, get_consent_status, fetch_fi_data, extract_financial_profile, enrich_business_profile_from_aa
 from azure_storage import upload_to_azure, delete_from_azure, get_sas_url
 from notifications_service import send_push_to_user, send_push
+from whatsapp_service import send_whatsapp
 
 
 class SetuConsentIn(BaseModel):
