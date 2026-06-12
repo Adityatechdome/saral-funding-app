@@ -613,6 +613,57 @@ async def admin_update_role(uid: str, body: RoleUpdate, admin=Depends(require_su
     return {"ok": True}
 
 
+class TeamInvite(BaseModel):
+    mobile: str
+    full_name: str
+    role: str
+
+
+@api_router.get("/admin/team")
+async def admin_list_team(admin=Depends(require_super_admin)):
+    """Return all users with an admin role."""
+    team = await db.users.find(
+        {"role": {"$in": list(ADMIN_ROLES)}},
+        {"_id": 0, "id": 1, "mobile": 1, "full_name": 1, "role": 1, "created_at": 1}
+    ).to_list(200)
+    return team
+
+
+@api_router.post("/admin/team/invite")
+async def admin_invite_team(body: TeamInvite, admin=Depends(require_super_admin)):
+    """Create or update a user with an admin role.
+    If the mobile already exists, just updates their role and name.
+    If not, creates a new account they can log in to via OTP."""
+    if body.role not in ADMIN_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid admin role")
+
+    mobile = body.mobile.strip()
+    if not mobile.startswith("+"):
+        mobile = "+91" + mobile.lstrip("0")
+
+    existing = await db.users.find_one({"mobile": mobile})
+    if existing:
+        await db.users.update_one(
+            {"mobile": mobile},
+            {"$set": {"role": body.role, "full_name": body.full_name, "updated_at": now_iso()}}
+        )
+        return {"ok": True, "action": "updated", "id": existing["id"]}
+
+    uid = str(uuid.uuid4())
+    doc = {
+        "id": uid,
+        "mobile": mobile,
+        "full_name": body.full_name,
+        "role": body.role,
+        "language": "en",
+        "onboarding_step": "complete",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    await db.users.insert_one(doc)
+    return {"ok": True, "action": "created", "id": uid}
+
+
 @api_router.get("/admin/schemes")
 async def admin_list_schemes(admin=Depends(require_admin)):
     return await db.schemes.find({}, {"_id": 0}).to_list(500)
