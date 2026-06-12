@@ -1,7 +1,9 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Query, UploadFile, File, Form
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Query, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse, Response
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os, io, csv, logging, uuid
 from pathlib import Path
@@ -20,14 +22,48 @@ from readiness_service import compute_readiness
 from alerts_service import evaluate_alerts
 from analytics_service import compute_overview, popular_schemes, state_distribution, consultation_status, lead_pipeline, daily_user_trend, consultation_trend
 from auth_service import send_otp as twilio_send_otp, verify_otp as twilio_verify_otp, is_enabled as firebase_enabled
+from security import (
+    create_token, verify_token,
+    check_rate_limit,
+    validate_upload,
+    sanitise_mobile, sanitise_search,
+)
 
 # ---- DB ----
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-app = FastAPI(title="Saral Funding API", version="1.0.0")
+app = FastAPI(title="Saral Funding API", version="1.0.0", docs_url=None, redoc_url=None)
 api_router = APIRouter(prefix="/api")
+
+# ---- Security middleware ----
+ALLOWED_ORIGINS = os.environ.get(
+    "ALLOWED_ORIGINS",
+    "http://localhost:8081,http://localhost:19006,exp://localhost:8081"
+).split(",")
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS + ["*"],   # * kept for Expo Go / mobile clients
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+)
 
 
 # ---- helpers ----
@@ -170,9 +206,15 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Unauthorized")
     token = authorization.replace("Bearer ", "").strip()
-    user = await db.users.find_one({"id": token}, {"_id": 0})
+    # Try JWT first, fall back to legacy UUID token for backwards compatibility
+    user_id = verify_token(token)
+    if user_id:
+        user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    else:
+        # Legacy: token == user id (remove after all clients have updated)
+        user = await db.users.find_one({"id": token}, {"_id": 0})
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     return user
 
 
@@ -198,12 +240,13 @@ async def root():
 
 @api_router.post("/auth/send-otp")
 async def send_otp(req: OtpRequest):
-    if not req.mobile or len(req.mobile) < 10:
-        raise HTTPException(status_code=400, detail="Invalid mobile number")
-    # Normalize to E.164 — add +91 if not already prefixed
-    mobile = req.mobile.strip()
-    if not mobile.startswith("+"):
-        mobile = "+91" + mobile.lstrip("0")
+    mobile = sanitise_mobile(req.mobile or "")
+    if not mobile:
+        raise HTTPException(status_code=400, detail="Invalid mobile number. Enter a valid 10-digit Indian number.")
+    # Rate limit: 5 OTP sends per mobile per 10 minutes
+    allowed, retry_after = check_rate_limit(f"otp_send:{mobile}", max_calls=5, window_seconds=600)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=f"Too many OTP requests. Try again in {retry_after} seconds.")
     try:
         result = twilio_send_otp(mobile)
         return result
@@ -235,14 +278,19 @@ async def _create_or_get_user(mobile: str, language: str) -> Dict[str, Any]:
 
 @api_router.post("/auth/verify-otp")
 async def verify_otp(req: OtpVerify):
-    mobile = req.mobile.strip()
-    if not mobile.startswith("+"):
-        mobile = "+91" + mobile.lstrip("0")
+    mobile = sanitise_mobile(req.mobile or "")
+    if not mobile:
+        raise HTTPException(status_code=400, detail="Invalid mobile number.")
+    # Rate limit: 10 attempts per mobile per 10 minutes
+    allowed, retry_after = check_rate_limit(f"otp_verify:{mobile}", max_calls=10, window_seconds=600)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=f"Too many attempts. Try again in {retry_after} seconds.")
     approved = twilio_verify_otp(mobile, req.code)
     if not approved:
         raise HTTPException(status_code=400, detail="Invalid or expired OTP. Please try again.")
-    user = await _create_or_get_user(req.mobile, req.language or "en")
-    return {"token": user["id"], "user": UserOut(**user).dict()}
+    user = await _create_or_get_user(mobile, req.language or "en")
+    token = create_token(user["id"])
+    return {"token": token, "user": UserOut(**user).dict()}
 
 
 @api_router.post("/auth/firebase-verify")
@@ -329,7 +377,8 @@ async def list_schemes(category: Optional[str] = None, q: Optional[str] = None, 
     if state and state.lower() != "all":
         ands.append({"$or": [{"states": "All India"}, {"states": state}]})
     if q:
-        ands.append({"$or": [{"name": {"$regex": q, "$options": "i"}}, {"description": {"$regex": q, "$options": "i"}}]})
+        safe_q = sanitise_search(q)
+        ands.append({"$or": [{"name": {"$regex": safe_q, "$options": "i"}}, {"description": {"$regex": safe_q, "$options": "i"}}]})
     if ands:
         query["$and"] = ands
     schemes = await db.schemes.find(query, {"_id": 0}).to_list(200)
@@ -649,7 +698,9 @@ async def admin_list_users(
     query: Dict[str, Any] = {}
     if role: query["role"] = role
     if state: query["state"] = state
-    if q: query["$or"] = [{"full_name": {"$regex": q, "$options": "i"}}, {"mobile": {"$regex": q, "$options": "i"}}]
+    if q:
+        safe_q = sanitise_search(q)
+        query["$or"] = [{"full_name": {"$regex": safe_q, "$options": "i"}}, {"mobile": {"$regex": safe_q, "$options": "i"}}]
     skip = (max(page, 1) - 1) * limit
     total = await db.users.count_documents(query)
     users = await db.users.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).to_list(limit)
@@ -794,7 +845,9 @@ async def admin_list_leads(
     query: Dict[str, Any] = {}
     if stage: query["stage"] = stage
     if assigned_to: query["assigned_to"] = assigned_to
-    if q: query["$or"] = [{"full_name": {"$regex": q, "$options": "i"}}, {"mobile": {"$regex": q, "$options": "i"}}]
+    if q:
+        safe_q = sanitise_search(q)
+        query["$or"] = [{"full_name": {"$regex": safe_q, "$options": "i"}}, {"mobile": {"$regex": safe_q, "$options": "i"}}]
     skip = (max(page, 1) - 1) * limit
     items = await db.leads.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).to_list(limit)
     return items  # return flat array for backwards compatibility with frontend
@@ -1017,7 +1070,7 @@ async def seed_db():
             "onboarding_step": "done", "role": "super_admin",
             "created_at": now_iso(), "updated_at": now_iso(),
         })
-        logging.info(f"Seeded super admin (mobile={admin_mobile}, OTP=123456)")
+        logging.info(f"Seeded super admin (mobile={admin_mobile})")
     else:
         # ensure role is super_admin
         await db.users.update_one({"mobile": admin_mobile}, {"$set": {"role": "super_admin"}})
@@ -1106,9 +1159,13 @@ async def upload_document(
 ):
     file_bytes = await file.read()
 
-    # Validate size: max 10 MB
-    if len(file_bytes) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File too large. Max 10MB.")
+    ok, err = validate_upload(
+        filename=file.filename or "",
+        content_type=file.content_type or "",
+        size=len(file_bytes),
+    )
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
 
     result = await upload_to_azure(file_bytes, doc_type, user["id"], file.filename or "upload")
 
