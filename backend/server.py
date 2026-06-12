@@ -278,6 +278,13 @@ async def save_profile(body: ProfileIn, user=Depends(get_current_user)):
     update["updated_at"] = now_iso()
     await db.users.update_one({"id": user["id"]}, {"$set": update})
     updated = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    # Sync to GHL (non-blocking — fire and forget errors)
+    try:
+        contact_id = upsert_contact({**user, **update})
+        if contact_id:
+            await db.users.update_one({"id": user["id"]}, {"$set": {"ghl_contact_id": contact_id}})
+    except Exception as e:
+        logging.warning(f"GHL sync failed for user {user['id']}: {e}")
     return UserOut(**updated).dict()
 
 
@@ -533,6 +540,21 @@ async def book_consultation(body: ConsultationIn, user=Depends(get_current_user)
         "body": f"Your {doc['consultation_type']} on {doc['date']} at {doc['time_slot']} is booked. Our advisor will reach out soon.",
         "type": "reminder", "read": False, "created_at": now_iso(),
     })
+
+    # --- GHL opportunity ---
+    try:
+        bp = await db.business_profiles.find_one({"user_id": user["id"]}, {"_id": 0}) or {}
+        ghl_cid = user.get("ghl_contact_id")
+        if not ghl_cid:
+            ghl_cid = upsert_contact(user)
+            if ghl_cid:
+                await db.users.update_one({"id": user["id"]}, {"$set": {"ghl_contact_id": ghl_cid}})
+        if ghl_cid:
+            opp_id = create_opportunity(ghl_cid, user, doc["consultation_type"], bp.get("funding_required", 0))
+            if opp_id:
+                await db.leads.update_one({"consultation_id": cid}, {"$set": {"ghl_opportunity_id": opp_id}})
+    except Exception as e:
+        logging.warning(f"GHL opportunity creation failed: {e}")
 
     # --- push confirmation to the user ---
     send_push_to_user(
@@ -837,6 +859,17 @@ async def admin_update_lead(lid: str, body: LeadUpdate, admin=Depends(require_ad
             "$push": {"activity_log": {"$each": [activity_entry], "$slice": -50}},
         }
     )
+
+    # Sync stage change to GHL
+    if "stage" in update:
+        try:
+            lead_full = await db.leads.find_one({"id": lid}, {"_id": 0, "ghl_opportunity_id": 1})
+            opp_id = (lead_full or {}).get("ghl_opportunity_id")
+            if opp_id:
+                update_opportunity_stage(opp_id, update["stage"])
+        except Exception as e:
+            logging.warning(f"GHL stage sync failed for lead {lid}: {e}")
+
     return {"ok": True}
 
 
@@ -997,6 +1030,7 @@ from setu_service import create_consent, get_consent_status, fetch_fi_data, extr
 from azure_storage import upload_to_azure, delete_from_azure, get_sas_url
 from notifications_service import send_push_to_user, send_push
 from whatsapp_service import send_whatsapp
+from ghl_service import upsert_contact, add_document_note, create_opportunity, update_opportunity_stage
 
 
 class SetuConsentIn(BaseModel):
@@ -1153,6 +1187,13 @@ async def admin_update_doc_status(doc_id: str, payload: DocumentStatusIn, admin=
             send_push_to_user(doc_owner, "Document Verified ✅", f"Your {result.get('doc_type')} has been verified by our team.")
         else:
             send_push_to_user(doc_owner, "Document Rejected ❌", f"Your {result.get('doc_type')} was rejected. Please re-upload a clearer copy.")
+        # GHL note
+        try:
+            ghl_cid = doc_owner.get("ghl_contact_id")
+            if ghl_cid:
+                add_document_note(ghl_cid, result.get("doc_type", "Document"), payload.status, doc_owner.get("full_name", ""))
+        except Exception as e:
+            logging.warning(f"GHL doc note failed: {e}")
 
     return result
 
