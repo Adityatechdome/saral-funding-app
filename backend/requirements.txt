@@ -13,5 +13,6 @@ python-jose>=3.3.0
 requests>=2.31.0
 python-multipart>=0.0.9
 azure-storage-blob>=12.19.0
+openai>=1.0.0
 pandas>=2.2.0
 numpy>=1.26.0

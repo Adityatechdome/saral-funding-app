@@ -13,6 +13,20 @@ from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+
+
+def _get_client():
+    if not OPENAI_API_KEY:
+        return None
+    try:
+        from openai import OpenAI
+        return OpenAI(api_key=OPENAI_API_KEY)
+    except ImportError:
+        logger.warning("openai package not installed. Run: pip install openai")
+        return None
+
+
 LANGUAGE_NAMES = {
     "en": "English", "hi": "Hindi (हिन्दी)", "gu": "Gujarati (ગુજરાતી)",
     "mr": "Marathi (मराठी)", "bn": "Bengali (বাংলা)", "ta": "Tamil (தமிழ்)",
@@ -92,6 +106,34 @@ async def match_schemes_with_llm(user: Dict, bp: Dict, fa: Dict, schemes: List[D
     top = matches[:8]
 
 
+    client = _get_client()
+    if client and user.get("state"):
+        try:
+            top_ids = [m["scheme_id"] for m in top]
+            ctx = json.dumps({
+                "user": {k: user.get(k) for k in ("state", "district", "gender", "age", "category")},
+                "business_profile": bp, "assessment": fa,
+                "schemes": [s for s in _brief_schemes(schemes) if s["id"] in top_ids],
+            }, ensure_ascii=False)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                max_tokens=512,
+                messages=[
+                    {"role": "system", "content": "You are an expert Indian government funding advisor. Given a user profile and candidate schemes, return a JSON object mapping scheme_id -> one short sentence (max 25 words) explaining why it fits. Only JSON, no prose."},
+                    {"role": "user", "content": f"Context:\n{ctx}"},
+                ],
+            )
+            text = response.choices[0].message.content.strip()
+            if text.startswith("```"):
+                text = text.strip("`")
+                if text.startswith("json"): text = text[4:]
+            reasons = json.loads(text)
+            for m in top:
+                if m["scheme_id"] in reasons:
+                    m["reason"] = reasons[m["scheme_id"]]
+        except Exception as e:
+            logger.warning(f"LLM reasoning failed: {e}")
+
     for m in top:
         if not m["reason"]:
             m["reason"] = "Matches your profile based on industry, location and funding need."
@@ -115,11 +157,28 @@ async def advisor_chat(
         f"Banks: {json.dumps(_brief_banks(banks), ensure_ascii=False)}."
     )
 
-    return (
-        "I'm your Saral Funding Advisor. Based on your profile, I recommend exploring "
-        "the schemes and banks listed on your dashboard. For personalised guidance, "
-        "please book a consultation with our expert team."
-    )
+    client = _get_client()
+    if not client:
+        return (
+            "I'm your Saral Funding Advisor. Based on your profile, I recommend exploring "
+            "the schemes and banks listed on your dashboard. For personalised guidance, "
+            "please book a consultation with our expert team."
+        )
+    try:
+        messages = [{"role": "system", "content": system_prompt}]
+        for h in history[-12:]:
+            role = "user" if h.get("role") == "user" else "assistant"
+            messages.append({"role": role, "content": h.get("content", "")})
+        messages.append({"role": "user", "content": message})
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=600,
+            messages=messages,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.exception(f"advisor_chat failed: {e}")
+        return "Sorry, I couldn't reach the advisor service right now. Please try again."
 
 
 async def advisor_structured(
@@ -127,7 +186,39 @@ async def advisor_structured(
     matches: List[Dict], banks_recommended: List[Dict], schemes: List[Dict], banks: List[Dict],
     user_query: str, language: str,
 ) -> Dict[str, Any]:
-    return _fallback_structured(user_query, matches, banks_recommended)
+    client = _get_client()
+    if not client:
+        return _fallback_structured(user_query, matches, banks_recommended)
+    try:
+        prompt_ctx = {
+            "user": {k: user_profile.get(k) for k in ("state", "district", "gender", "age", "category")},
+            "business_profile": business_profile, "assessment": assessment,
+            "top_schemes": matches[:3],
+            "top_banks": [{k: b.get(k) for k in ("bank_id", "name", "score", "interest_range", "supports", "why")} for b in banks_recommended[:3]],
+            "user_query": user_query,
+        }
+        lang_name = LANGUAGE_NAMES.get(language, "English")
+        system = (
+            f"You are Saral Funding Advisor. Reply in {lang_name}. "
+            f"Produce a STRICT JSON object with keys: summary, schemes (array of {{name,why,estimated_funding,estimated_subsidy}}), "
+            f"banks (array of {{name,why,interest_range}}), documents (5-8 strings), roadmap (4-6 steps), next_steps (2-3 steps), why. No prose outside JSON."
+        )
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=1024,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(prompt_ctx, ensure_ascii=False)},
+            ],
+        )
+        text = response.choices[0].message.content.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.startswith("json"): text = text[4:]
+        return json.loads(text)
+    except Exception as e:
+        logger.exception(f"advisor_structured failed: {e}")
+        return _fallback_structured(user_query, matches, banks_recommended)
 
 
 def _fallback_structured(query: str, matches: List[Dict], banks: List[Dict]) -> Dict[str, Any]:
