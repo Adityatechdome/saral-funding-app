@@ -13,24 +13,12 @@ from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-
 LANGUAGE_NAMES = {
     "en": "English", "hi": "Hindi (हिन्दी)", "gu": "Gujarati (ગુજરાતી)",
     "mr": "Marathi (मराठी)", "bn": "Bengali (বাংলা)", "ta": "Tamil (தமிழ்)",
     "te": "Telugu (తెలుగు)", "kn": "Kannada (ಕನ್ನಡ)", "pa": "Punjabi (ਪੰਜਾਬੀ)",
 }
 
-
-def _get_client():
-    if not ANTHROPIC_API_KEY:
-        return None
-    try:
-        import anthropic
-        return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    except ImportError:
-        logger.warning("anthropic package not installed. Run: pip install anthropic")
-        return None
 
 
 def _brief_schemes(schemes: List[Dict]) -> List[Dict]:
@@ -103,35 +91,6 @@ async def match_schemes_with_llm(user: Dict, bp: Dict, fa: Dict, schemes: List[D
     matches.sort(key=lambda x: x["score"], reverse=True)
     top = matches[:8]
 
-    client = _get_client()
-    if client and user.get("state"):
-        try:
-            top_ids = [m["scheme_id"] for m in top]
-            ctx = json.dumps({
-                "user": {k: user.get(k) for k in ("state", "district", "gender", "age", "category")},
-                "business_profile": bp, "assessment": fa,
-                "schemes": [s for s in _brief_schemes(schemes) if s["id"] in top_ids],
-            }, ensure_ascii=False)
-
-            response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=512,
-                system=(
-                    "You are an expert Indian government funding advisor. Given a user profile and candidate schemes, "
-                    "return a JSON object mapping scheme_id -> one short sentence (max 25 words) explaining why it fits. Only JSON, no prose."
-                ),
-                messages=[{"role": "user", "content": f"Context:\n{ctx}"}],
-            )
-            text = response.content[0].text.strip()
-            if text.startswith("```"):
-                text = text.strip("`")
-                if text.startswith("json"): text = text[4:]
-            reasons = json.loads(text)
-            for m in top:
-                if m["scheme_id"] in reasons:
-                    m["reason"] = reasons[m["scheme_id"]]
-        except Exception as e:
-            logger.warning(f"LLM reasoning failed: {e}")
 
     for m in top:
         if not m["reason"]:
@@ -156,27 +115,11 @@ async def advisor_chat(
         f"Banks: {json.dumps(_brief_banks(banks), ensure_ascii=False)}."
     )
 
-    client = _get_client()
-    if not client:
-        return "AI advisor is not configured. Please set ANTHROPIC_API_KEY."
-
-    try:
-        messages = []
-        for h in history[-12:]:
-            role = "user" if h.get("role") == "user" else "assistant"
-            messages.append({"role": role, "content": h.get("content", "")})
-        messages.append({"role": "user", "content": message})
-
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=600,
-            system=system_prompt,
-            messages=messages,
-        )
-        return response.content[0].text.strip()
-    except Exception as e:
-        logger.exception(f"advisor_chat failed: {e}")
-        return "Sorry, I couldn't reach the advisor service right now. Please try again."
+    return (
+        "I'm your Saral Funding Advisor. Based on your profile, I recommend exploring "
+        "the schemes and banks listed on your dashboard. For personalised guidance, "
+        "please book a consultation with our expert team."
+    )
 
 
 async def advisor_structured(
@@ -184,47 +127,7 @@ async def advisor_structured(
     matches: List[Dict], banks_recommended: List[Dict], schemes: List[Dict], banks: List[Dict],
     user_query: str, language: str,
 ) -> Dict[str, Any]:
-    lang_name = LANGUAGE_NAMES.get(language, "English")
-
-    client = _get_client()
-    if not client:
-        return _fallback_structured(user_query, matches, banks_recommended)
-
-    try:
-        prompt_ctx = {
-            "user": {k: user_profile.get(k) for k in ("state", "district", "gender", "age", "category")},
-            "business_profile": business_profile,
-            "assessment": assessment,
-            "top_schemes": matches[:3],
-            "top_banks": [{k: b.get(k) for k in ("bank_id", "name", "score", "interest_range", "supports", "why")} for b in banks_recommended[:3]],
-            "user_query": user_query,
-        }
-        system = (
-            f"You are Saral Funding Advisor. Reply in {lang_name}. "
-            f"Given the user's query and context, produce a STRICT JSON object with these keys:\n"
-            f'  "summary": one paragraph (max 60 words),\n'
-            f'  "schemes": array of up to 3 objects {{"name", "why", "estimated_funding", "estimated_subsidy"}},\n'
-            f'  "banks": array of up to 3 objects {{"name", "why", "interest_range"}},\n'
-            f'  "documents": array of 5–8 short strings,\n'
-            f'  "roadmap": array of 4–6 short ordered steps,\n'
-            f'  "next_steps": array of 2–3 actionable next steps,\n'
-            f'  "why": short paragraph (max 40 words).\n'
-            f"No prose outside JSON."
-        )
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
-            system=system,
-            messages=[{"role": "user", "content": json.dumps(prompt_ctx, ensure_ascii=False)}],
-        )
-        text = response.content[0].text.strip()
-        if text.startswith("```"):
-            text = text.strip("`")
-            if text.startswith("json"): text = text[4:]
-        return json.loads(text)
-    except Exception as e:
-        logger.exception(f"advisor_structured failed: {e}")
-        return _fallback_structured(user_query, matches, banks_recommended)
+    return _fallback_structured(user_query, matches, banks_recommended)
 
 
 def _fallback_structured(query: str, matches: List[Dict], banks: List[Dict]) -> Dict[str, Any]:
