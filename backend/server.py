@@ -161,6 +161,10 @@ class RoleUpdate(BaseModel):
     role: str
 
 
+class PushTokenIn(BaseModel):
+    token: str
+
+
 # ---- auth dep ----
 async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     if not authorization or not authorization.startswith("Bearer "):
@@ -541,6 +545,13 @@ async def my_consultations(user=Depends(get_current_user)):
 # ===========================================================================
 # NOTIFICATIONS
 # ===========================================================================
+@api_router.post("/notifications/push-token")
+async def register_push_token(body: PushTokenIn, user=Depends(get_current_user)):
+    """Save Expo push token for this user so we can send them notifications."""
+    await db.users.update_one({"id": user["id"]}, {"$set": {"push_token": body.token}})
+    return {"success": True}
+
+
 @api_router.get("/notifications/me")
 async def my_notifications(user=Depends(get_current_user)):
     return await db.notifications.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
@@ -894,6 +905,7 @@ async def seed_db():
 
 from setu_service import create_consent, get_consent_status, fetch_fi_data, extract_financial_profile, enrich_business_profile_from_aa
 from azure_storage import upload_to_azure, delete_from_azure, get_sas_url
+from notifications_service import send_push_to_user, send_push
 
 
 class SetuConsentIn(BaseModel):
@@ -1040,9 +1052,17 @@ async def admin_update_doc_status(doc_id: str, payload: DocumentStatusIn, admin=
     if not result:
         raise HTTPException(status_code=404, detail="Document not found")
     result.pop("_id", None)
-    # Don't expose blob_name to admin client either
     result.pop("blob_name", None)
     result.pop("blob_url", None)
+
+    # Push notification to user
+    doc_owner = await db.users.find_one({"id": result.get("user_id")})
+    if doc_owner:
+        if payload.status == "verified":
+            send_push_to_user(doc_owner, "Document Verified ✅", f"Your {result.get('doc_type')} has been verified by our team.")
+        else:
+            send_push_to_user(doc_owner, "Document Rejected ❌", f"Your {result.get('doc_type')} was rejected. Please re-upload a clearer copy.")
+
     return result
 
 
@@ -1072,6 +1092,17 @@ async def save_admin_recommendations(user_id: str, payload: AdminRecommendationI
         {**rec, "_id": user_id},
         upsert=True,
     )
+
+    # Push notification to user
+    user_doc = await db.users.find_one({"id": user_id})
+    if user_doc:
+        send_push_to_user(
+            user_doc,
+            "Your Funding Plan is Ready 🎉",
+            "Our advisor has reviewed your profile and recommended the best schemes and banks for you.",
+            {"screen": "funding-case"},
+        )
+
     return rec
 
 
