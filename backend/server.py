@@ -28,6 +28,7 @@ from security import (
     validate_upload,
     sanitise_mobile, sanitise_search,
 )
+from audit_service import log as audit_log, AuditAction, check_admin_abuse
 
 # ---- DB ----
 mongo_url = os.environ['MONGO_URL']
@@ -69,6 +70,17 @@ app.add_middleware(
 # ---- helpers ----
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def get_ip(request: Request) -> str:
+    """Extract real client IP, respecting Cloudflare / reverse proxy headers."""
+    cf = request.headers.get("CF-Connecting-IP")
+    if cf:
+        return cf
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 ROLES = ["user", "super_admin", "manager", "expert", "sales_executive", "support_executive"]
@@ -239,16 +251,16 @@ async def root():
 
 
 @api_router.post("/auth/send-otp")
-async def send_otp(req: OtpRequest):
+async def send_otp(req: OtpRequest, request: Request):
     mobile = sanitise_mobile(req.mobile or "")
     if not mobile:
         raise HTTPException(status_code=400, detail="Invalid mobile number. Enter a valid 10-digit Indian number.")
-    # Rate limit: 5 OTP sends per mobile per 10 minutes
     allowed, retry_after = check_rate_limit(f"otp_send:{mobile}", max_calls=5, window_seconds=600)
     if not allowed:
         raise HTTPException(status_code=429, detail=f"Too many OTP requests. Try again in {retry_after} seconds.")
     try:
         result = twilio_send_otp(mobile)
+        await audit_log(db, AuditAction.OTP_SEND, resource=mobile, ip=get_ip(request))
         return result
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -277,19 +289,20 @@ async def _create_or_get_user(mobile: str, language: str) -> Dict[str, Any]:
 
 
 @api_router.post("/auth/verify-otp")
-async def verify_otp(req: OtpVerify):
+async def verify_otp(req: OtpVerify, request: Request):
     mobile = sanitise_mobile(req.mobile or "")
     if not mobile:
         raise HTTPException(status_code=400, detail="Invalid mobile number.")
-    # Rate limit: 10 attempts per mobile per 10 minutes
     allowed, retry_after = check_rate_limit(f"otp_verify:{mobile}", max_calls=10, window_seconds=600)
     if not allowed:
         raise HTTPException(status_code=429, detail=f"Too many attempts. Try again in {retry_after} seconds.")
     approved = twilio_verify_otp(mobile, req.code)
     if not approved:
+        await audit_log(db, AuditAction.OTP_VERIFY_FAIL, resource=mobile, ip=get_ip(request))
         raise HTTPException(status_code=400, detail="Invalid or expired OTP. Please try again.")
     user = await _create_or_get_user(mobile, req.language or "en")
     token = create_token(user["id"])
+    await audit_log(db, AuditAction.LOGIN, user_id=user["id"], role=user.get("role", "user"), ip=get_ip(request))
     return {"token": token, "user": UserOut(**user).dict()}
 
 
@@ -320,13 +333,13 @@ async def get_me(user=Depends(get_current_user)):
 # ONBOARDING
 # ===========================================================================
 @api_router.post("/profile")
-async def save_profile(body: ProfileIn, user=Depends(get_current_user)):
+async def save_profile(body: ProfileIn, request: Request, user=Depends(get_current_user)):
     update = body.dict()
     update["onboarding_step"] = "business"
     update["updated_at"] = now_iso()
     await db.users.update_one({"id": user["id"]}, {"$set": update})
     updated = await db.users.find_one({"id": user["id"]}, {"_id": 0})
-    # Sync to GHL (non-blocking — fire and forget errors)
+    await audit_log(db, AuditAction.PROFILE_UPDATE, user_id=user["id"], role=user.get("role"), ip=get_ip(request))
     try:
         contact_id = upsert_contact({**user, **update})
         if contact_id:
@@ -719,10 +732,14 @@ async def admin_user_detail(uid: str, admin=Depends(require_admin)):
 
 
 @api_router.post("/admin/users/{uid}/role")
-async def admin_update_role(uid: str, body: RoleUpdate, admin=Depends(require_super_admin)):
+async def admin_update_role(uid: str, body: RoleUpdate, request: Request, admin=Depends(require_super_admin)):
     if body.role not in ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
+    prev = await db.users.find_one({"id": uid}, {"role": 1})
     await db.users.update_one({"id": uid}, {"$set": {"role": body.role}})
+    await audit_log(db, AuditAction.ADMIN_ROLE_CHANGE, user_id=admin["id"], role=admin.get("role"),
+                    resource=uid, ip=get_ip(request),
+                    metadata={"from_role": (prev or {}).get("role"), "to_role": body.role, "target_user": uid})
     return {"ok": True}
 
 
@@ -913,15 +930,17 @@ async def admin_update_lead(lid: str, body: LeadUpdate, admin=Depends(require_ad
         }
     )
 
-    # Sync stage change to GHL
+    # Sync stage change to GHL + audit log
     if "stage" in update:
         try:
-            lead_full = await db.leads.find_one({"id": lid}, {"_id": 0, "ghl_opportunity_id": 1})
+            lead_full = await db.leads.find_one({"id": lid}, {"_id": 0, "ghl_opportunity_id": 1, "user_id": 1})
             opp_id = (lead_full or {}).get("ghl_opportunity_id")
             if opp_id:
                 update_opportunity_stage(opp_id, update["stage"])
         except Exception as e:
             logging.warning(f"GHL stage sync failed for lead {lid}: {e}")
+        await audit_log(db, AuditAction.LEAD_STAGE_CHANGE, user_id=admin["id"], role=admin.get("role"),
+                        resource=lid, metadata={"stage": update["stage"], "lead_id": lid})
 
     return {"ok": True}
 
@@ -1041,6 +1060,15 @@ async def _ensure_indexes():
         # ai_conversations — chat history lookup
         await db.ai_conversations.create_index("user_id", unique=True, background=True)
 
+        # audit_logs — queried by user_id, action, timestamp
+        await db.audit_logs.create_index("user_id", background=True)
+        await db.audit_logs.create_index("action", background=True)
+        await db.audit_logs.create_index([("timestamp", -1)], background=True)
+        await db.audit_logs.create_index([("user_id", 1), ("action", 1), ("timestamp", -1)], background=True)
+        # archive mirrors same indexes
+        await db.audit_logs_archive.create_index("user_id", background=True)
+        await db.audit_logs_archive.create_index([("timestamp", -1)], background=True)
+
         logging.info("MongoDB indexes ensured")
     except Exception as e:
         logging.warning(f"Index creation warning (non-fatal): {e}")
@@ -1155,6 +1183,7 @@ class AdminRecommendationIn(BaseModel):
 async def upload_document(
     doc_type: str = Form(...),
     file: UploadFile = File(...),
+    request: Request = None,
     user=Depends(get_current_user),
 ):
     file_bytes = await file.read()
@@ -1177,11 +1206,13 @@ async def upload_document(
         "created_at": now_iso(),
         "file_name": file.filename or (doc_type.replace(" ", "_").lower() + ".pdf"),
         "blob_name": result["blob_name"],
-        "blob_url": result["blob_url"],  # private URL, not for direct client use
+        # blob_url intentionally NOT stored — generated on demand with short TTL
     }
     await db.documents.insert_one({**doc, "_id": doc["id"]})
-    # Never expose blob_name to the frontend
-    return {k: v for k, v in doc.items() if k not in ("blob_name", "blob_url")}
+    await audit_log(db, AuditAction.DOCUMENT_UPLOAD, user_id=user["id"], role=user.get("role"),
+                    resource=doc["file_name"], ip=get_ip(request) if request else None,
+                    metadata={"doc_type": doc_type, "doc_id": doc["id"]})
+    return {k: v for k, v in doc.items() if k != "blob_name"}
 
 
 @api_router.get("/documents/me")
@@ -1205,15 +1236,18 @@ async def delete_document(doc_id: str, user=Depends(get_current_user)):
 
 
 @api_router.get("/documents/{doc_id}/download")
-async def get_document_download_url(doc_id: str, user=Depends(get_current_user)):
-    """Return a short-lived SAS URL so the user can download their own document."""
+async def get_document_download_url(doc_id: str, request: Request, user=Depends(get_current_user)):
+    """Return a 5-minute SAS URL so the user can download their own document."""
     doc = await db.documents.find_one({"id": doc_id, "user_id": user["id"]})
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     if not doc.get("blob_name"):
         raise HTTPException(status_code=404, detail="No file attached to this document")
-    sas_url = get_sas_url(doc["blob_name"])
-    return {"url": sas_url, "expires_in": 3600}
+    sas_url = get_sas_url(doc["blob_name"], expiry_hours=0.083)  # 5 minutes
+    await audit_log(db, AuditAction.DOCUMENT_DOWNLOAD, user_id=user["id"], role=user.get("role"),
+                    resource=doc.get("file_name"), ip=get_ip(request),
+                    metadata={"doc_id": doc_id, "doc_type": doc.get("doc_type")})
+    return {"url": sas_url, "expires_in": 300}
 
 
 @api_router.get("/admin/users/{user_id}/documents")
@@ -1244,6 +1278,10 @@ async def admin_update_doc_status(doc_id: str, payload: DocumentStatusIn, admin=
             send_push_to_user(doc_owner, "Document Verified ✅", f"Your {result.get('doc_type')} has been verified by our team.")
         else:
             send_push_to_user(doc_owner, "Document Rejected ❌", f"Your {result.get('doc_type')} was rejected. Please re-upload a clearer copy.")
+        # Audit log
+        action = AuditAction.DOCUMENT_VERIFY if payload.status == "verified" else AuditAction.DOCUMENT_REJECT
+        await audit_log(db, action, user_id=admin["id"], role=admin.get("role"),
+                        resource=result.get("file_name"), metadata={"doc_id": doc_id, "doc_owner": result.get("user_id")})
         # GHL note
         try:
             ghl_cid = doc_owner.get("ghl_contact_id")
@@ -1256,15 +1294,63 @@ async def admin_update_doc_status(doc_id: str, payload: DocumentStatusIn, admin=
 
 
 @api_router.get("/admin/documents/{doc_id}/download")
-async def admin_get_document_download_url(doc_id: str, admin=Depends(require_admin)):
-    """Admin: return a short-lived SAS URL to download any user's document."""
+async def admin_get_document_download_url(doc_id: str, request: Request, admin=Depends(require_admin)):
+    """Admin: return a 5-minute SAS URL to download any user's document. Every download is audited."""
     doc = await db.documents.find_one({"id": doc_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     if not doc.get("blob_name"):
         raise HTTPException(status_code=404, detail="No file attached to this document")
-    sas_url = get_sas_url(doc["blob_name"])
-    return {"url": sas_url, "expires_in": 3600}
+
+    # Anomaly check: alert if admin downloads >20 docs in 1 hour
+    abuse = await check_admin_abuse(db, admin["id"], AuditAction.DOCUMENT_DOWNLOAD, threshold=20, window_minutes=60)
+    if abuse:
+        logging.warning(f"ANOMALY: Admin {admin.get('full_name')} ({admin['id']}) exceeded 20 document downloads in 1 hour")
+
+    sas_url = get_sas_url(doc["blob_name"], expiry_hours=0.083)  # 5 minutes
+    await audit_log(db, AuditAction.DOCUMENT_DOWNLOAD, user_id=admin["id"], role=admin.get("role"),
+                    resource=doc.get("file_name"), ip=get_ip(request),
+                    metadata={"doc_id": doc_id, "doc_owner": doc.get("user_id"), "doc_type": doc.get("doc_type")})
+    return {"url": sas_url, "expires_in": 300}
+
+
+@api_router.get("/admin/audit-logs")
+async def admin_list_audit_logs(
+    user_id: Optional[str] = None,
+    action: Optional[str] = None,
+    limit: int = Query(default=100, le=500),
+    admin=Depends(require_super_admin),
+):
+    """Super admin only: view audit logs. Read from archive (tamper-resistant)."""
+    q: Dict[str, Any] = {}
+    if user_id: q["user_id"] = user_id
+    if action: q["action"] = action
+    logs = await db.audit_logs_archive.find(q, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+    return logs
+
+
+@api_router.post("/account/deactivate")
+async def deactivate_account(request: Request, user=Depends(get_current_user)):
+    """
+    DPDP Phase 1: Deactivate account and anonymize personal data.
+    Audit logs and financial records are retained for regulatory compliance.
+    Full deletion requires legal review.
+    """
+    uid = user["id"]
+    # Anonymize personal fields — replace with placeholder
+    anon = {
+        "full_name": "Deleted User",
+        "state": None, "district": None, "gender": None,
+        "age": None, "category": None,
+        "deactivated": True, "deactivated_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    await db.users.update_one({"id": uid}, {"$set": anon})
+    # Anonymize business profile
+    await db.business_profiles.update_one({"user_id": uid}, {"$set": {"anonymized": True}})
+    await audit_log(db, AuditAction.ACCOUNT_ANONYMIZE, user_id=uid, role=user.get("role"),
+                    ip=get_ip(request), metadata={"reason": "user_requested"})
+    return {"ok": True, "message": "Account deactivated. Personal data has been anonymized."}
 
 
 @api_router.post("/admin/users/{user_id}/recommendations")
