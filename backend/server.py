@@ -901,50 +901,52 @@ class SetuConsentIn(BaseModel):
 
 
 @api_router.post("/setu/aa/consent")
-async def setu_create_consent(body: SetuConsentIn, user_id: str = Depends(get_current_user_id)):
+async def setu_create_consent(body: SetuConsentIn, user=Depends(get_current_user)):
+    uid = user["id"]
     try:
-        result = await create_consent(body.mobile, user_id)
-        # Persist consent id on user record so we can reference it later
-        await db.users.update_one({"id": user_id}, {"$set": {"aa_consent_id": result["consent_id"], "aa_status": "PENDING"}})
+        result = await create_consent(body.mobile, uid)
+        await db.users.update_one({"id": uid}, {"$set": {"aa_consent_id": result["consent_id"], "aa_status": "PENDING"}})
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @api_router.get("/setu/aa/consent/{consent_id}/status")
-async def setu_consent_status(consent_id: str, user_id: str = Depends(get_current_user_id)):
+async def setu_consent_status(consent_id: str, user=Depends(get_current_user)):
+    uid = user["id"]
     try:
         result = await get_consent_status(consent_id)
         if result["status"] == "ACTIVE":
-            await db.users.update_one({"id": user_id}, {"$set": {"aa_status": "ACTIVE"}})
+            await db.users.update_one({"id": uid}, {"$set": {"aa_status": "ACTIVE"}})
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @api_router.get("/setu/aa/data/{consent_id}")
-async def setu_fetch_data(consent_id: str, user_id: str = Depends(get_current_user_id)):
+async def setu_fetch_data(consent_id: str, user=Depends(get_current_user)):
+    uid = user["id"]
     try:
         fi_data = await fetch_fi_data(consent_id)
         fp = extract_financial_profile(fi_data)
-        # Enrich the user's business profile with AA data
-        bp_doc = await db.business_profiles.find_one({"user_id": user_id}) or {}
+        bp_doc = await db.business_profiles.find_one({"user_id": uid}) or {}
         enriched = enrich_business_profile_from_aa(bp_doc, fp)
-        await db.business_profiles.update_one({"user_id": user_id}, {"$set": enriched}, upsert=True)
+        await db.business_profiles.update_one({"user_id": uid}, {"$set": enriched}, upsert=True)
         return {"financial_profile": fp, "updated": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @api_router.get("/setu/aa/status")
-async def setu_aa_status(user_id: str = Depends(get_current_user_id)):
-    user = await db.users.find_one({"id": user_id})
-    if not user:
+async def setu_aa_status(user=Depends(get_current_user)):
+    uid = user["id"]
+    u = await db.users.find_one({"id": uid})
+    if not u:
         raise HTTPException(status_code=404, detail="User not found")
     return {
-        "aa_linked": user.get("aa_status") == "ACTIVE",
-        "aa_status": user.get("aa_status"),
-        "aa_consent_id": user.get("aa_consent_id"),
+        "aa_linked": u.get("aa_status") == "ACTIVE",
+        "aa_status": u.get("aa_status"),
+        "aa_consent_id": u.get("aa_consent_id"),
     }
 
 
