@@ -5,6 +5,9 @@ on:
     - cron: "30 20 * * *"   # 2:00 AM IST (UTC+5:30) every day
   workflow_dispatch:          # allow manual run from GitHub Actions tab
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   backup:
     name: Backup MongoDB to Azure Blob
@@ -21,16 +24,15 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          pip install pymongo azure-storage-blob python-dotenv
+        run: pip install pymongo azure-storage-blob python-dotenv
 
       - name: Run backup
         env:
-          MONGO_URL:          ${{ secrets.MONGO_URL }}
-          DB_NAME:            ${{ secrets.DB_NAME }}
-          AZURE_ACCOUNT_NAME: ${{ secrets.AZURE_ACCOUNT_NAME }}
-          AZURE_CONTAINER:    ${{ secrets.AZURE_CONTAINER }}
-          AZURE_SAS_TOKEN:    ${{ secrets.AZURE_SAS_TOKEN }}
+          MONGO_URL:             ${{ secrets.MONGO_URL }}
+          DB_NAME:               ${{ secrets.DB_NAME }}
+          AZURE_ACCOUNT_NAME:    ${{ secrets.AZURE_ACCOUNT_NAME }}
+          AZURE_CONTAINER:       ${{ secrets.AZURE_CONTAINER }}
+          AZURE_SAS_TOKEN:       ${{ secrets.AZURE_SAS_TOKEN }}
           BACKUP_RETENTION_DAYS: "30"
         run: |
           cd backend
@@ -38,5 +40,4 @@ jobs:
 
       - name: Notify on failure
         if: failure()
-        run: |
-          echo "Backup failed on $(date)" >> $GITHUB_STEP_SUMMARY
+        run: echo "Backup failed on $(date)" >> $GITHUB_STEP_SUMMARY
