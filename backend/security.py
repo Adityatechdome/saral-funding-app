@@ -18,33 +18,75 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # JWT
 # ---------------------------------------------------------------------------
+import hashlib
+import secrets
+
 JWT_SECRET = os.environ.get("JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRY_DAYS = int(os.environ.get("JWT_EXPIRY_DAYS", "30"))
+
+ACCESS_TOKEN_MINUTES  = int(os.environ.get("ACCESS_TOKEN_MINUTES", "15"))
+REFRESH_TOKEN_DAYS    = int(os.environ.get("REFRESH_TOKEN_DAYS", "30"))
 
 if not JWT_SECRET:
-    # Warn loudly — operator must set this in production
     logger.warning("JWT_SECRET is not set — using insecure fallback. Set JWT_SECRET in env!")
     JWT_SECRET = "CHANGE_ME_SET_JWT_SECRET_IN_ENV_BEFORE_DEPLOY"
 
 
-def create_token(user_id: str) -> str:
+def create_access_token(user_id: str) -> str:
+    """Short-lived access token — 15 minutes."""
     payload = {
-        "sub": user_id,
-        "iat": int(time.time()),
-        "exp": int(time.time()) + JWT_EXPIRY_DAYS * 86400,
+        "sub":  user_id,
+        "type": "access",
+        "iat":  int(time.time()),
+        "exp":  int(time.time()) + ACCESS_TOKEN_MINUTES * 60,
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+def create_refresh_token(user_id: str) -> str:
+    """Long-lived refresh token — 30 days."""
+    payload = {
+        "sub":  user_id,
+        "type": "refresh",
+        "iat":  int(time.time()),
+        "exp":  int(time.time()) + REFRESH_TOKEN_DAYS * 86400,
+        "jti":  secrets.token_hex(16),   # unique ID to allow revocation
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+# Keep old name as alias so existing callers don't break
+def create_token(user_id: str) -> str:
+    return create_access_token(user_id)
+
+
 def verify_token(token: str) -> Optional[str]:
-    """Returns user_id if valid, None otherwise."""
+    """Returns user_id if valid access token, None otherwise."""
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") == "refresh":
+            return None  # refresh tokens must not be used as access tokens
         return payload.get("sub")
     except JWTError as e:
-        logger.debug(f"JWT verification failed: {e}")
+        logger.debug(f"JWT access token verification failed: {e}")
         return None
+
+
+def verify_refresh_token(token: str) -> Optional[dict]:
+    """Returns full payload if valid refresh token, None otherwise."""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "refresh":
+            return None
+        return payload
+    except JWTError as e:
+        logger.debug(f"JWT refresh token verification failed: {e}")
+        return None
+
+
+def hash_token(token: str) -> str:
+    """Store only the hash of refresh tokens in DB — never the raw token."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------

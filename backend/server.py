@@ -24,6 +24,8 @@ from analytics_service import compute_overview, popular_schemes, state_distribut
 from auth_service import send_otp as twilio_send_otp, verify_otp as twilio_verify_otp, is_enabled as firebase_enabled
 from security import (
     create_token, verify_token,
+    create_access_token, create_refresh_token,
+    verify_refresh_token, hash_token,
     check_rate_limit,
     validate_upload,
     sanitise_mobile, sanitise_search,
@@ -301,9 +303,66 @@ async def verify_otp(req: OtpVerify, request: Request):
         await audit_log(db, AuditAction.OTP_VERIFY_FAIL, resource=mobile, ip=get_ip(request))
         raise HTTPException(status_code=400, detail="Invalid or expired OTP. Please try again.")
     user = await _create_or_get_user(mobile, req.language or "en")
-    token = create_token(user["id"])
+
+    access_token  = create_access_token(user["id"])
+    refresh_token = create_refresh_token(user["id"])
+
+    # Store only the hash of the refresh token — never the raw token
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"refresh_token_hash": hash_token(refresh_token), "updated_at": now_iso()}}
+    )
+
     await audit_log(db, AuditAction.LOGIN, user_id=user["id"], role=user.get("role", "user"), ip=get_ip(request))
-    return {"token": token, "user": UserOut(**user).dict()}
+    return {
+        "token":         access_token,
+        "refresh_token": refresh_token,
+        "user":          UserOut(**user).dict(),
+    }
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+@api_router.post("/auth/refresh")
+async def refresh_token(req: RefreshRequest, request: Request):
+    """Exchange a valid refresh token for a new access token + rotated refresh token."""
+    payload = verify_refresh_token(req.refresh_token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token.")
+
+    user_id = payload["sub"]
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found.")
+
+    # Verify the stored hash matches — prevents replay of old/stolen tokens
+    stored_hash = user.get("refresh_token_hash")
+    if not stored_hash or stored_hash != hash_token(req.refresh_token):
+        raise HTTPException(status_code=401, detail="Refresh token has been revoked.")
+
+    # Rotate: issue new pair, invalidate old refresh token
+    new_access  = create_access_token(user_id)
+    new_refresh = create_refresh_token(user_id)
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"refresh_token_hash": hash_token(new_refresh), "updated_at": now_iso()}}
+    )
+    await audit_log(db, AuditAction.TOKEN_REFRESH, user_id=user_id, role=user.get("role"), ip=get_ip(request))
+    return {"token": new_access, "refresh_token": new_refresh}
+
+
+@api_router.post("/auth/logout")
+async def logout(request: Request, user=Depends(get_current_user)):
+    """Invalidate the refresh token — forces re-login on all devices."""
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$unset": {"refresh_token_hash": ""}, "$set": {"updated_at": now_iso()}}
+    )
+    await audit_log(db, AuditAction.LOGIN + "_logout", user_id=user["id"],
+                    role=user.get("role"), ip=get_ip(request))
+    return {"ok": True}
 
 
 @api_router.post("/auth/firebase-verify")

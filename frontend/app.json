@@ -41,6 +41,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "97dd24aa-0104-4455-9e65-2fb725ac1b02"
+      }
+    },
+    "owner": "aditya.techdome"
   }
 }

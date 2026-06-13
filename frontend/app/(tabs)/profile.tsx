@@ -13,7 +13,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { Settings, Bell, Phone, ShieldCheck, LogOut, ChevronRight, Pencil, X, Check, Shield } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, elevation } from "@/src/theme";
-import { apiGet, apiPost, clearToken } from "@/src/api";
+import { apiGet, apiPost, apiLogout } from "@/src/api";
 
 export default function Profile() {
   const router = useRouter();
@@ -48,7 +48,7 @@ export default function Profile() {
         text: "Logout",
         style: "destructive",
         onPress: async () => {
-          await clearToken();
+          await apiLogout();
           router.replace("/login");
         },
       },

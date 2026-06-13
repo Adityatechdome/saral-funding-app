@@ -1,0 +1,102 @@
+name: Pre-Deploy Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ── 1. Frontend: TypeScript + Expo export ─────────────────────────────────
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Expo export (web) — catches JS/JSX compile errors
+        env:
+          EXPO_PUBLIC_BACKEND_URL: https://saral-funding-app.onrender.com
+        run: npx expo export --platform web --output-dir /tmp/expo-web-out
+
+      - name: Check export produced files
+        run: |
+          COUNT=$(find /tmp/expo-web-out -name "*.js" | wc -l)
+          echo "Exported $COUNT JS files"
+          if [ "$COUNT" -lt 1 ]; then
+            echo "ERROR: Expo export produced no JS files"
+            exit 1
+          fi
+
+  # ── 2. Backend: Python syntax + import check ──────────────────────────────
+  backend:
+    name: Backend checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Syntax check all Python files
+        run: python -m py_compile server.py security.py audit_service.py ghl_service.py whatsapp_service.py backup.py
+
+      - name: Import check (catches missing deps / circular imports)
+        env:
+          JWT_SECRET: ci_test_secret_not_real
+          MONGO_URL: mongodb://localhost:27017
+          DB_NAME: test
+          AZURE_ACCOUNT_NAME: test
+          AZURE_CONTAINER: test
+          AZURE_SAS_TOKEN: test
+          GHL_API_KEY: test
+          GHL_LOCATION_ID: test
+          GHL_PIPELINE_NAME: test
+          TWILIO_ACCOUNT_SID: test
+          TWILIO_AUTH_TOKEN: test
+          TWILIO_WHATSAPP_FROM: whatsapp:+14155238886
+        run: python -c "import security; import audit_service; import ghl_service; import whatsapp_service; print('All imports OK')"
+
+  # ── 3. Gate: summary ──────────────────────────────────────────────────────
+  deploy-gate:
+    name: Deploy gate
+    needs: [frontend, backend]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [ "${{ needs.frontend.result }}" != "success" ] || [ "${{ needs.backend.result }}" != "success" ]; then
+            echo "❌ Pre-deploy checks FAILED — do not submit to App Store"
+            exit 1
+          fi
+          echo "✅ All checks passed — safe to build and submit to App Store"
