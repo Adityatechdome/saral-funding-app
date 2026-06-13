@@ -65,10 +65,12 @@ async function request<T>(
   retry = true,
 ): Promise<T> {
   const token = await getToken();
-  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  const authHeaders: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: { ...init.headers, ...authHeaders },
+    headers: { ...(init.headers as Record<string, string> | undefined), ...authHeaders },
   });
 
   if (res.status === 401 && retry) {
