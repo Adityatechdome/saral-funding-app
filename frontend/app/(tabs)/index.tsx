@@ -11,7 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Bell, ChevronRight, Phone, Building2, TrendingUp, AlertCircle, Calendar, Zap } from "lucide-react-native";
 
-import { colors, spacing, radius, fonts, elevation } from "@/src/theme";
+import { colors, spacing, radius, fonts, formatINR, elevation } from "@/src/theme";
 import { apiGet, apiPost } from "@/src/api";
 import { DashboardSkeleton } from "@/src/components/SkeletonLoader";
 import ReadinessRing from "@/src/components/ReadinessRing";
