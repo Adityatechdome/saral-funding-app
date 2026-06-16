@@ -132,7 +132,7 @@ export default function AssessmentScreen() {
         udyam_registration: udyam,
         existing_loans: loans,
       });
-      router.replace("/(tabs)");
+      router.replace("/documents");
     } finally {
       setLoading(false);
     }
