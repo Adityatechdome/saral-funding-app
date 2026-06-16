@@ -129,7 +129,7 @@ function AppCard({ app, expanded, onToggle }: {
           <Text style={s.schemeName} numberOfLines={1}>{app.scheme_name}</Text>
           {app.bank_name ? (
             <View style={s.bankRow}>
-              <Building2 size={11} color={colors.textSecondary} strokeWidth={2} />
+              <Building2 size={11} color={colors.textDim} strokeWidth={2} />
               <Text style={s.bankName}>{app.bank_name}</Text>
             </View>
           ) : null}
@@ -137,7 +137,7 @@ function AppCard({ app, expanded, onToggle }: {
         </View>
         <ChevronRight
           size={18}
-          color={colors.textSecondary}
+          color={colors.textDim}
           style={{ transform: [{ rotate: expanded ? "90deg" : "0deg" }] }}
           strokeWidth={2}
         />
@@ -254,7 +254,7 @@ const s = StyleSheet.create({
   cardHeaderText:  { flex: 1, gap: 4 },
   schemeName:      { fontSize: 15, fontFamily: fonts.semiBold, color: colors.text },
   bankRow:         { flexDirection: "row", alignItems: "center", gap: 4 },
-  bankName:        { fontSize: 12, fontFamily: fonts.regular, color: colors.textSecondary },
+  bankName:        { fontSize: 12, fontFamily: fonts.regular, color: colors.textDim },
   pill:            { alignSelf: "flex-start", borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, marginTop: 2 },
   pillText:        { fontSize: 11, fontFamily: fonts.semiBold },
 
@@ -268,7 +268,7 @@ const s = StyleSheet.create({
   progressLineDone:{ backgroundColor: colors.primary },
 
   stageLabelRow:   { flexDirection: "row", marginBottom: 4 },
-  stageLabelText:  { flex: 1, fontSize: 9, fontFamily: fonts.regular, color: colors.textSecondary,
+  stageLabelText:  { flex: 1, fontSize: 9, fontFamily: fonts.regular, color: colors.textDim,
                      textAlign: "center" },
   stageLabelActive:{ fontFamily: fonts.semiBold, color: colors.primaryDark },
 
@@ -278,16 +278,16 @@ const s = StyleSheet.create({
 
   history:         { borderTopWidth: 1, borderTopColor: colors.border, marginTop: spacing.sm,
                      paddingTop: spacing.sm, gap: 10 },
-  historyTitle:    { fontSize: 12, fontFamily: fonts.semiBold, color: colors.textSecondary,
+  historyTitle:    { fontSize: 12, fontFamily: fonts.semiBold, color: colors.textDim,
                      marginBottom: 4 },
   historyRow:      { flexDirection: "row", gap: 10 },
   historyDot:      { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary, marginTop: 5 },
   historyContent:  { flex: 1, gap: 2 },
   historyStage:    { fontSize: 13, fontFamily: fonts.semiBold, color: colors.text },
-  historyNote:     { fontSize: 12, fontFamily: fonts.regular, color: colors.textSecondary },
-  historyMeta:     { fontSize: 11, fontFamily: fonts.regular, color: colors.textSecondary },
+  historyNote:     { fontSize: 12, fontFamily: fonts.regular, color: colors.textDim },
+  historyMeta:     { fontSize: 11, fontFamily: fonts.regular, color: colors.textDim },
 
   empty:           { alignItems: "center", paddingTop: 80, gap: spacing.md, paddingHorizontal: 32 },
   emptyTitle:      { fontSize: 18, fontFamily: fonts.semiBold, color: colors.text },
-  emptyBody:       { fontSize: 14, fontFamily: fonts.regular, color: colors.textSecondary, textAlign: "center", lineHeight: 22 },
+  emptyBody:       { fontSize: 14, fontFamily: fonts.regular, color: colors.textDim, textAlign: "center", lineHeight: 22 },
 });
