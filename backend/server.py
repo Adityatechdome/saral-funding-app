@@ -1085,6 +1085,160 @@ async def export_schemes(admin=Depends(require_admin)):
 
 
 # ===========================================================================
+# SCHEME APPLICATIONS  (admin assigns schemes/banks to a user; user tracks)
+# ===========================================================================
+
+APPLICATION_STAGES = [
+    "documents_submitted",
+    "call_done",
+    "scheme_identified",
+    "application_filed",
+    "under_review",
+    "approved",
+    "disbursed",
+    "rejected",
+]
+
+STAGE_LABELS = {
+    "documents_submitted": "Documents Submitted",
+    "call_done":           "Call Done",
+    "scheme_identified":   "Scheme Identified",
+    "application_filed":   "Application Filed",
+    "under_review":        "Under Review",
+    "approved":            "Approved",
+    "disbursed":           "Disbursed",
+    "rejected":            "Rejected",
+}
+
+
+class AssignSchemeRequest(BaseModel):
+    scheme_id:   str
+    scheme_name: str
+    bank_id:     Optional[str] = None
+    bank_name:   Optional[str] = None
+    notes:       Optional[str] = None
+
+
+class UpdateAppStageRequest(BaseModel):
+    stage: str
+    note:  Optional[str] = None
+
+
+@api_router.post("/admin/users/{uid}/scheme-applications")
+async def admin_assign_scheme(uid: str, req: AssignSchemeRequest,
+                               request: Request, admin=Depends(require_admin)):
+    """Admin assigns a scheme (+ optional bank) to a user, creating a tracker."""
+    if req.scheme_id and await db.scheme_applications.find_one(
+        {"user_id": uid, "scheme_id": req.scheme_id}
+    ):
+        raise HTTPException(status_code=409, detail="Scheme already assigned to this user.")
+
+    now = now_iso()
+    app_id = str(uuid.uuid4())
+    doc = {
+        "id":          app_id,
+        "user_id":     uid,
+        "scheme_id":   req.scheme_id,
+        "scheme_name": req.scheme_name,
+        "bank_id":     req.bank_id,
+        "bank_name":   req.bank_name,
+        "stage":       "scheme_identified",
+        "stage_history": [{
+            "stage":      "scheme_identified",
+            "note":       req.notes or "Scheme assigned by advisor",
+            "updated_by": admin["full_name"],
+            "updated_at": now,
+        }],
+        "assigned_by":  admin["id"],
+        "assigned_at":  now,
+        "notes":        req.notes or "",
+        "created_at":   now,
+        "updated_at":   now,
+    }
+    await db.scheme_applications.insert_one(doc)
+    await audit_log(db, "scheme_application_assign", user_id=admin["id"],
+                    role=admin.get("role"), resource=uid,
+                    metadata={"scheme": req.scheme_name, "bank": req.bank_name},
+                    ip=get_ip(request))
+    return {k: v for k, v in doc.items() if k != "_id"}
+
+
+@api_router.get("/admin/users/{uid}/scheme-applications")
+async def admin_list_user_applications(uid: str, admin=Depends(require_admin)):
+    """Admin views all scheme applications for a specific user."""
+    apps = await db.scheme_applications.find({"user_id": uid}, {"_id": 0}).to_list(100)
+    return apps
+
+
+@api_router.patch("/admin/scheme-applications/{app_id}/stage")
+async def admin_update_app_stage(app_id: str, req: UpdateAppStageRequest,
+                                  request: Request, admin=Depends(require_admin)):
+    """Admin updates the stage of a scheme application."""
+    if req.stage not in APPLICATION_STAGES:
+        raise HTTPException(status_code=400,
+                            detail=f"Invalid stage. Must be one of: {APPLICATION_STAGES}")
+    app = await db.scheme_applications.find_one({"id": app_id})
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    now = now_iso()
+    history_entry = {
+        "stage":      req.stage,
+        "note":       req.note or "",
+        "updated_by": admin["full_name"],
+        "updated_at": now,
+    }
+    await db.scheme_applications.update_one(
+        {"id": app_id},
+        {
+            "$set":  {"stage": req.stage, "updated_at": now},
+            "$push": {"stage_history": history_entry},
+        }
+    )
+    await audit_log(db, "scheme_application_stage_update", user_id=admin["id"],
+                    role=admin.get("role"), resource=app_id,
+                    metadata={"stage": req.stage, "scheme": app.get("scheme_name")},
+                    ip=get_ip(request))
+
+    # Notify the user
+    user = await db.users.find_one({"id": app["user_id"]}, {"_id": 0})
+    if user and user.get("expo_push_token"):
+        label = STAGE_LABELS.get(req.stage, req.stage)
+        await send_push(
+            user["expo_push_token"],
+            "Application Update 🎉" if req.stage not in ("rejected",) else "Application Update",
+            f"{app.get('scheme_name')}: {label}",
+        )
+    return {"ok": True, "stage": req.stage}
+
+
+@api_router.delete("/admin/scheme-applications/{app_id}")
+async def admin_delete_application(app_id: str, admin=Depends(require_admin)):
+    """Admin removes a scheme assignment."""
+    result = await db.scheme_applications.delete_one({"id": app_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    return {"ok": True}
+
+
+@api_router.get("/my/scheme-applications")
+async def my_scheme_applications(user=Depends(get_current_user)):
+    """User fetches all their scheme application trackers."""
+    apps = await db.scheme_applications.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("created_at", 1).to_list(100)
+    # Attach stage label and index for progress display
+    for app in apps:
+        app["stage_label"] = STAGE_LABELS.get(app["stage"], app["stage"])
+        try:
+            app["stage_index"] = APPLICATION_STAGES.index(app["stage"])
+        except ValueError:
+            app["stage_index"] = 0
+        app["total_stages"] = len(APPLICATION_STAGES) - 1  # exclude rejected
+    return apps
+
+
+# ===========================================================================
 # STARTUP
 # ===========================================================================
 async def _ensure_indexes():
@@ -1111,6 +1265,12 @@ async def _ensure_indexes():
         # leads — CRM pipeline queries
         await db.leads.create_index("user_id", background=True)
         await db.leads.create_index([("stage", 1), ("created_at", -1)], background=True)
+
+        # scheme_applications — per-user scheme trackers
+        await db.scheme_applications.create_index("user_id", background=True)
+        await db.scheme_applications.create_index(
+            [("user_id", 1), ("scheme_id", 1)], unique=True, background=True
+        )
         await db.leads.create_index("assigned_to", background=True)
 
         # notifications — user inbox (unread filter)

@@ -9,6 +9,7 @@ import {
   User, Phone, MapPin, Building2, DollarSign, StickyNote,
   Calendar, Clock, ArrowRight, CheckCircle2, AlertCircle,
   FileText, ChevronDown, X, Tag, Upload, Star, ExternalLink,
+  Plus, Trash2, ChevronRight,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR, stageColor } from "@/src/theme";
@@ -121,12 +122,18 @@ export default function LeadDetail() {
   const [docActionLoading, setDocActionLoading] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<string | null>(null);
 
-  // Admin Recommendations
-  const [existingRec, setExistingRec] = useState<any>(null);
-  const [selectedSchemes, setSelectedSchemes] = useState<string[]>([]);
-  const [selectedBanks, setSelectedBanks] = useState<string[]>([]);
-  const [recNote, setRecNote] = useState("");
-  const [savingRec, setSavingRec] = useState(false);
+  // Scheme Applications
+  const [schemeApps, setSchemeApps] = useState<any[]>([]);
+  const [allSchemes, setAllSchemes] = useState<any[]>([]);
+  const [allBanks, setAllBanks] = useState<any[]>([]);
+  const [assignModal, setAssignModal] = useState(false);
+  const [assignScheme, setAssignScheme] = useState<any>(null);
+  const [assignBank, setAssignBank] = useState<any>(null);
+  const [assignNote, setAssignNote] = useState("");
+  const [assigning, setAssigning] = useState(false);
+  const [stageModal, setStageModal] = useState<any>(null); // {app}
+  const [stageNote, setStageNote] = useState("");
+  const [updatingStage, setUpdatingStage] = useState(false);
 
   const load = async () => {
     try {
@@ -137,17 +144,16 @@ export default function LeadDetail() {
       // Load docs and existing recommendation in parallel
       const userId = d.user?.id || d.user_id;
       if (userId) {
-        const [docs, rec] = await Promise.all([
+        const [docs, apps, schemes, banks] = await Promise.all([
           apiGet<any[]>(`/admin/users/${userId}/documents`).catch(() => []),
-          apiGet<any>(`/admin/users/${userId}/recommendations`).catch(() => null),
+          apiGet<any[]>(`/admin/users/${userId}/scheme-applications`).catch(() => []),
+          apiGet<any[]>("/schemes").catch(() => []),
+          apiGet<any[]>("/banks").catch(() => []),
         ]);
         setUserDocs(Array.isArray(docs) ? docs : []);
-        if (rec) {
-          setExistingRec(rec);
-          setSelectedSchemes(rec.schemes || []);
-          setSelectedBanks(rec.banks || []);
-          setRecNote(rec.note || "");
-        }
+        setSchemeApps(Array.isArray(apps) ? apps : []);
+        setAllSchemes(Array.isArray(schemes) ? schemes : []);
+        setAllBanks(Array.isArray(banks) ? banks : []);
       }
     } catch {
       Alert.alert("Error", "Could not load lead");
@@ -191,23 +197,67 @@ export default function LeadDetail() {
     }
   };
 
-  const saveRecommendations = async () => {
-    setSavingRec(true);
+  const assignSchemeToUser = async () => {
+    if (!assignScheme) return;
+    setAssigning(true);
+    const userId = data?.user?.id || data?.user_id;
     try {
-      const userId = data?.user?.id || data?.user_id;
-      await apiPost(`/admin/users/${userId}/recommendations`, {
-        schemes: selectedSchemes,
-        banks: selectedBanks,
-        note: recNote,
+      await apiPost(`/admin/users/${userId}/scheme-applications`, {
+        scheme_id:   assignScheme.id,
+        scheme_name: assignScheme.name,
+        bank_id:     assignBank?.id || null,
+        bank_name:   assignBank?.name || null,
+        notes:       assignNote,
       });
-      Alert.alert("Saved", "Recommendations sent to user.");
-      const rec = await apiGet<any>(`/admin/users/${userId}/recommendations`).catch(() => null);
-      setExistingRec(rec);
-    } catch {
-      Alert.alert("Error", "Could not save recommendations.");
+      const apps = await apiGet<any[]>(`/admin/users/${userId}/scheme-applications`).catch(() => []);
+      setSchemeApps(Array.isArray(apps) ? apps : []);
+      setAssignModal(false);
+      setAssignScheme(null);
+      setAssignBank(null);
+      setAssignNote("");
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Could not assign scheme.");
     } finally {
-      setSavingRec(false);
+      setAssigning(false);
     }
+  };
+
+  const updateAppStage = async (appId: string, stage: string) => {
+    setUpdatingStage(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/admin/scheme-applications/${appId}/stage`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ stage, note: stageNote }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const userId = data?.user?.id || data?.user_id;
+      const apps = await apiGet<any[]>(`/admin/users/${userId}/scheme-applications`).catch(() => []);
+      setSchemeApps(Array.isArray(apps) ? apps : []);
+      setStageModal(null);
+      setStageNote("");
+    } catch {
+      Alert.alert("Error", "Could not update stage.");
+    } finally {
+      setUpdatingStage(false);
+    }
+  };
+
+  const deleteSchemeApp = (appId: string, schemeName: string) => {
+    Alert.alert("Remove Scheme", `Remove "${schemeName}" from this user's applications?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Remove", style: "destructive", onPress: async () => {
+        try {
+          const token = await getToken();
+          await fetch(`${API_BASE}/admin/scheme-applications/${appId}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          setSchemeApps(prev => prev.filter(a => a.id !== appId));
+        } catch { Alert.alert("Error", "Could not remove."); }
+      }},
+    ]);
   };
 
   const moveStage = async (stage: string) => {
@@ -392,77 +442,47 @@ export default function LeadDetail() {
           )}
         </SectionCard>
 
-        {/* Admin Recommendations */}
-        <SectionCard title="Admin Recommendations">
-          {existingRec && (
-            <View style={styles.existingRecBanner}>
-              <Star size={12} color="#065F46" strokeWidth={2.5} />
-              <Text style={styles.existingRecText}>
-                Last saved on{" "}
-                {existingRec.created_at
-                  ? new Date(existingRec.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-                  : "—"}
-              </Text>
-            </View>
+        {/* Scheme Applications */}
+        <SectionCard title={`Scheme Applications (${schemeApps.length})`}>
+          {schemeApps.length === 0 ? (
+            <Text style={styles.emptyNote}>No schemes assigned yet. Tap below to assign.</Text>
+          ) : (
+            schemeApps.map((app: any) => (
+              <View key={app.id} style={styles.appRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.appSchemeName}>{app.scheme_name}</Text>
+                  {app.bank_name ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
+                      <Building2 size={11} color={colors.textDim} strokeWidth={2} />
+                      <Text style={styles.appBankName}>{app.bank_name}</Text>
+                    </View>
+                  ) : null}
+                  <View style={[styles.appStagePill, app.stage === "approved" || app.stage === "disbursed" ? { backgroundColor: "#dcfce7" } : app.stage === "rejected" ? { backgroundColor: "#fee2e2" } : { backgroundColor: "#eff6ff" }]}>
+                    <Text style={[styles.appStageText, { color: app.stage === "approved" || app.stage === "disbursed" ? "#16a34a" : app.stage === "rejected" ? "#dc2626" : colors.primary }]}>
+                      {app.stage_label || app.stage}
+                    </Text>
+                  </View>
+                </View>
+                <View style={{ flexDirection: "row", gap: 6 }}>
+                  <TouchableOpacity
+                    style={[styles.docActionBtn, { backgroundColor: colors.primarySoft }]}
+                    onPress={() => { setStageModal(app); setStageNote(""); }}
+                  >
+                    <Text style={[styles.docActionText, { color: colors.primaryDark }]}>Stage</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.docActionBtn, { backgroundColor: "#fee2e2" }]}
+                    onPress={() => deleteSchemeApp(app.id, app.scheme_name)}
+                  >
+                    <Trash2 size={12} color="#dc2626" strokeWidth={2} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
           )}
-
-          <Text style={styles.recSubLabel}>Recommended Schemes</Text>
-          <View style={styles.recChipsWrap}>
-            {schemeMatches.map((s: any) => {
-              const active = selectedSchemes.includes(s.name);
-              return (
-                <TouchableOpacity
-                  key={s.scheme_id}
-                  style={[styles.recChip, active && styles.recChipActive]}
-                  onPress={() => setSelectedSchemes((prev) =>
-                    active ? prev.filter((x) => x !== s.name) : [...prev, s.name]
-                  )}
-                >
-                  <Text style={[styles.recChipText, active && styles.recChipTextActive]}>{s.name}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={[styles.recSubLabel, { marginTop: 10 }]}>Recommended Banks</Text>
-          <View style={styles.recChipsWrap}>
-            {RECOMMENDED_BANKS.map((bank) => {
-              const active = selectedBanks.includes(bank);
-              return (
-                <TouchableOpacity
-                  key={bank}
-                  style={[styles.recChip, active && styles.recChipActive]}
-                  onPress={() => setSelectedBanks((prev) =>
-                    active ? prev.filter((x) => x !== bank) : [...prev, bank]
-                  )}
-                >
-                  <Text style={[styles.recChipText, active && styles.recChipTextActive]}>{bank}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={[styles.recSubLabel, { marginTop: 10 }]}>Note to User (optional)</Text>
-          <TextInput
-            style={styles.recNoteInput}
-            value={recNote}
-            onChangeText={setRecNote}
-            placeholder="Add a personal note for this user…"
-            placeholderTextColor={colors.textPlaceholder}
-            multiline
-            numberOfLines={2}
-            textAlignVertical="top"
-          />
-
-          <TouchableOpacity
-            style={[styles.recSaveBtn, savingRec && { opacity: 0.6 }]}
-            onPress={saveRecommendations}
-            disabled={savingRec}
-          >
-            {savingRec
-              ? <ActivityIndicator color="#FFF" size="small" />
-              : <Text style={styles.recSaveBtnText}>Save Recommendations</Text>
-            }
+          <TouchableOpacity style={styles.assignBtn} onPress={() => setAssignModal(true)}>
+            <Plus size={14} color="#fff" strokeWidth={2.5} />
+            <Text style={styles.assignBtnText}>Assign Scheme</Text>
           </TouchableOpacity>
         </SectionCard>
 
@@ -583,6 +603,140 @@ export default function LeadDetail() {
           </View>
         </View>
       </Modal>
+
+      {/* Assign Scheme Modal */}
+      <Modal visible={assignModal} animationType="slide" transparent onRequestClose={() => setAssignModal(false)}>
+        <View style={styles.modalBg}>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Assign Scheme</Text>
+              <TouchableOpacity style={styles.closeBtn} onPress={() => setAssignModal(false)}>
+                <X size={16} color={colors.textMuted} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.fieldLabel}>Select Scheme</Text>
+            <ScrollView style={{ maxHeight: 160, marginBottom: 12 }} showsVerticalScrollIndicator={false}>
+              {allSchemes.map((s: any) => {
+                const active = assignScheme?.id === s.id;
+                return (
+                  <TouchableOpacity
+                    key={s.id}
+                    style={[styles.listItem, active && styles.listItemActive]}
+                    onPress={() => setAssignScheme(s)}
+                  >
+                    <Text style={[styles.listItemText, active && styles.listItemTextActive]}>{s.name}</Text>
+                    {active && <CheckCircle2 size={14} color={colors.primary} strokeWidth={2} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <Text style={styles.fieldLabel}>Select Bank (optional)</Text>
+            <ScrollView style={{ maxHeight: 130, marginBottom: 12 }} showsVerticalScrollIndicator={false}>
+              <TouchableOpacity
+                style={[styles.listItem, !assignBank && styles.listItemActive]}
+                onPress={() => setAssignBank(null)}
+              >
+                <Text style={[styles.listItemText, !assignBank && styles.listItemTextActive]}>No bank (scheme only)</Text>
+              </TouchableOpacity>
+              {allBanks.map((b: any) => {
+                const active = assignBank?.id === b.id;
+                return (
+                  <TouchableOpacity
+                    key={b.id}
+                    style={[styles.listItem, active && styles.listItemActive]}
+                    onPress={() => setAssignBank(b)}
+                  >
+                    <Text style={[styles.listItemText, active && styles.listItemTextActive]}>{b.name}</Text>
+                    {active && <CheckCircle2 size={14} color={colors.primary} strokeWidth={2} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <Text style={styles.fieldLabel}>Note (optional)</Text>
+            <TextInput
+              style={[styles.notesInput, { minHeight: 50 }]}
+              value={assignNote}
+              onChangeText={setAssignNote}
+              placeholder="e.g. Eligible based on GST turnover"
+              placeholderTextColor={colors.textPlaceholder}
+              multiline
+            />
+
+            <TouchableOpacity
+              style={[styles.saveBtn, (!assignScheme || assigning) && { opacity: 0.5 }]}
+              onPress={assignSchemeToUser}
+              disabled={!assignScheme || assigning}
+            >
+              {assigning
+                ? <ActivityIndicator color="#FFF" size="small" />
+                : <Text style={styles.saveBtnText}>Assign Scheme</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Update Stage Modal */}
+      <Modal visible={!!stageModal} animationType="slide" transparent onRequestClose={() => setStageModal(null)}>
+        <View style={styles.modalBg}>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sheetTitle}>Update Stage</Text>
+                {stageModal && <Text style={{ fontSize: 12, color: colors.textDim, marginTop: 2 }}>{stageModal.scheme_name}</Text>}
+              </View>
+              <TouchableOpacity style={styles.closeBtn} onPress={() => setStageModal(null)}>
+                <X size={16} color={colors.textMuted} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.stagesGrid}>
+              {["documents_submitted","call_done","scheme_identified","application_filed","under_review","approved","disbursed","rejected"].map((st) => {
+                const labels: Record<string,string> = {
+                  documents_submitted:"Docs Submitted", call_done:"Call Done",
+                  scheme_identified:"Scheme ID'd", application_filed:"App Filed",
+                  under_review:"Under Review", approved:"Approved",
+                  disbursed:"Disbursed", rejected:"Rejected",
+                };
+                const isCurrent = stageModal?.stage === st;
+                const isRej = st === "rejected";
+                return (
+                  <TouchableOpacity
+                    key={st}
+                    style={[styles.stageChip, {
+                      borderColor: isCurrent ? colors.primary : isRej ? "#dc2626" : colors.border,
+                      backgroundColor: isCurrent ? colors.primarySoft : isRej ? "#fee2e2" : colors.surface2,
+                    }]}
+                    onPress={() => updateAppStage(stageModal.id, st)}
+                    disabled={updatingStage}
+                  >
+                    {updatingStage && isCurrent
+                      ? <ActivityIndicator size="small" color={colors.primary} />
+                      : <Text style={[styles.stageChipText, {
+                          color: isCurrent ? colors.primaryDark : isRej ? "#dc2626" : colors.text,
+                        }]}>{labels[st]}</Text>
+                    }
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.fieldLabel}>Note (optional)</Text>
+            <TextInput
+              style={[styles.notesInput, { minHeight: 50 }]}
+              value={stageNote}
+              onChangeText={setStageNote}
+              placeholder="Add a note about this stage update"
+              placeholderTextColor={colors.textPlaceholder}
+              multiline
+            />
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -705,4 +859,30 @@ const styles = StyleSheet.create({
     paddingVertical: 14, alignItems: "center",
   },
   saveBtnText: { fontSize: 15, fontFamily: fonts.displayBold, color: "#FFF" },
+
+  // Scheme applications
+  appRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  appSchemeName: { fontSize: 13, fontFamily: fonts.medium, color: colors.text },
+  appBankName:   { fontSize: 11, fontFamily: fonts.regular, color: colors.textDim },
+  appStagePill:  { alignSelf: "flex-start", borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, marginTop: 4 },
+  appStageText:  { fontSize: 11, fontFamily: fonts.semiBold },
+  assignBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: colors.primary, borderRadius: radius.xl,
+    paddingVertical: 10, justifyContent: "center", marginTop: 12,
+  },
+  assignBtnText: { fontSize: 13, fontFamily: fonts.displayBold, color: "#FFF" },
+
+  // Modal list items
+  listItem: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingVertical: 9, paddingHorizontal: 10, borderRadius: radius.lg,
+    marginBottom: 2,
+  },
+  listItemActive:    { backgroundColor: colors.primarySoft },
+  listItemText:      { fontSize: 13, fontFamily: fonts.regular, color: colors.text, flex: 1 },
+  listItemTextActive:{ fontFamily: fonts.semiBold, color: colors.primaryDark },
 });

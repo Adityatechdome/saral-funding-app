@@ -205,7 +205,7 @@ export default function Dashboard() {
           )}
 
           {/* ── Quick Actions ── */}
-          <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
+          <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
             <TouchableOpacity
               testID="book-cta"
               style={[styles.quickAction, { flex: 1.5 }]}
@@ -227,6 +227,20 @@ export default function Dashboard() {
               <Text style={styles.qaSub}>Compare offers</Text>
             </TouchableOpacity>
           </View>
+          {/* ── My Applications tracker ── */}
+          <TouchableOpacity
+            style={[styles.quickAction, { flexDirection: "row", alignItems: "center", marginBottom: 16, paddingVertical: 14 }]}
+            onPress={() => router.push("/my-applications")}
+            activeOpacity={0.85}
+            testID="my-applications-cta"
+          >
+            <TrendingUp size={20} color={colors.primaryDark} strokeWidth={2} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.qaTitle}>My Applications</Text>
+              <Text style={styles.qaSub}>Track your scheme applications</Text>
+            </View>
+            <ChevronRight size={16} color={colors.primaryDark} strokeWidth={2} />
+          </TouchableOpacity>
 
           {/* ── Upcoming Consultation ── */}
           {next && (
