@@ -23,6 +23,7 @@ import {
   Paperclip,
   ExternalLink,
   FolderOpen,
+  Info,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts } from "@/src/theme";
@@ -298,6 +299,12 @@ export default function DocumentsTab() {
                 <View style={{ marginTop: 5 }}>
                   <StatusBadge status={doc.status} />
                 </View>
+                {doc.status === "rejected" && doc.reject_reason && (
+                  <View style={s.rejectReasonBox}>
+                    <Info size={11} color="#DC2626" strokeWidth={2} />
+                    <Text style={s.rejectReasonText}>{doc.reject_reason}</Text>
+                  </View>
+                )}
               </View>
               <View style={s.docActions}>
                 {doc.file_name && (
@@ -485,5 +492,24 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
+  },
+  rejectReasonBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 5,
+    marginTop: 5,
+    backgroundColor: "#FEF2F2",
+    borderRadius: radius.md,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+  rejectReasonText: {
+    fontSize: 11,
+    fontFamily: fonts.medium,
+    color: "#DC2626",
+    flex: 1,
+    lineHeight: 16,
   },
 });

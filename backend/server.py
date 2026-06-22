@@ -1462,6 +1462,7 @@ async def setu_aa_status(user=Depends(get_current_user)):
 
 class DocumentStatusIn(BaseModel):
     status: str  # "verified" | "rejected"
+    reject_reason: Optional[str] = None
 
 class AdminRecommendationIn(BaseModel):
     schemes: List[str] = []
@@ -1540,6 +1541,30 @@ async def get_document_download_url(doc_id: str, request: Request, user=Depends(
     return {"url": sas_url, "expires_in": 300}
 
 
+@api_router.get("/admin/documents")
+async def admin_list_all_documents(
+    status: Optional[str] = None,
+    page: int = 1,
+    limit: int = 30,
+    admin=Depends(require_admin),
+):
+    query: dict = {}
+    if status and status in ("pending", "verified", "rejected"):
+        query["status"] = status
+    skip = (max(page, 1) - 1) * limit
+    total = await db.documents.count_documents(query)
+    docs = await db.documents.find(query, {"_id": 0, "blob_name": 0}).sort("created_at", -1).skip(skip).to_list(limit)
+    # Attach user names
+    user_ids = list({d["user_id"] for d in docs if d.get("user_id")})
+    users_map = {}
+    if user_ids:
+        async for u in db.users.find({"id": {"$in": user_ids}}, {"id": 1, "full_name": 1, "mobile": 1}):
+            users_map[u["id"]] = {"full_name": u.get("full_name", "—"), "mobile": u.get("mobile", "")}
+    for d in docs:
+        d["user"] = users_map.get(d.get("user_id"), {})
+    return {"items": docs, "total": total, "page": page, "limit": limit, "pages": max(1, (total + limit - 1) // limit)}
+
+
 @api_router.get("/admin/users/{user_id}/documents")
 async def admin_list_user_documents(user_id: str, admin=Depends(require_admin)):
     docs = await db.documents.find({"user_id": user_id}, {"_id": 0}).to_list(100)
@@ -1550,9 +1575,14 @@ async def admin_list_user_documents(user_id: str, admin=Depends(require_admin)):
 async def admin_update_doc_status(doc_id: str, payload: DocumentStatusIn, admin=Depends(require_admin)):
     if payload.status not in ("verified", "rejected"):
         raise HTTPException(status_code=400, detail="status must be verified or rejected")
+    update_fields: dict = {"status": payload.status, "updated_at": now_iso()}
+    if payload.status == "rejected" and payload.reject_reason:
+        update_fields["reject_reason"] = payload.reject_reason.strip()
+    elif payload.status == "verified":
+        update_fields["reject_reason"] = None
     result = await db.documents.find_one_and_update(
         {"id": doc_id},
-        {"$set": {"status": payload.status, "updated_at": now_iso()}},
+        {"$set": update_fields},
         return_document=True,
     )
     if not result:
@@ -1567,7 +1597,8 @@ async def admin_update_doc_status(doc_id: str, payload: DocumentStatusIn, admin=
         if payload.status == "verified":
             send_push_to_user(doc_owner, "Document Verified ✅", f"Your {result.get('doc_type')} has been verified by our team.")
         else:
-            send_push_to_user(doc_owner, "Document Rejected ❌", f"Your {result.get('doc_type')} was rejected. Please re-upload a clearer copy.")
+            reason_suffix = f" Reason: {payload.reject_reason}" if payload.reject_reason else " Please re-upload a clearer copy."
+            send_push_to_user(doc_owner, "Document Rejected ❌", f"Your {result.get('doc_type')} was rejected.{reason_suffix}")
         # Audit log
         action = AuditAction.DOCUMENT_VERIFY if payload.status == "verified" else AuditAction.DOCUMENT_REJECT
         await audit_log(db, action, user_id=admin["id"], role=admin.get("role"),
