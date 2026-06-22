@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 import { Check, Globe, Info, Shield, FileText, LogOut, ChevronRight } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts } from "@/src/theme";
-import { apiPost, apiGet, clearToken } from "@/src/api";
+import { apiPost, apiGet, apiLogout } from "@/src/api";
 import { LANGUAGES, loadLang, getLang, setLang } from "@/src/i18n";
 import { BackBar } from "@/src/components/StepBar";
 
@@ -35,7 +35,7 @@ export default function Settings() {
           text: "Logout",
           style: "destructive",
           onPress: async () => {
-            await clearToken();
+            await apiLogout();
             router.replace("/login");
           },
         },

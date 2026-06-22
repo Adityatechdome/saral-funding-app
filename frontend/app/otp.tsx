@@ -13,7 +13,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { ShieldCheck, RefreshCw } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts } from "@/src/theme";
-import { apiPost, setToken } from "@/src/api";
+import { apiPost, setTokens } from "@/src/api";
 import { getLang } from "@/src/i18n";
 import Button from "@/src/components/ui/Button";
 import { BackBar } from "@/src/components/StepBar";
@@ -82,11 +82,11 @@ export default function Otp() {
     setErr("");
     setLoading(true);
     try {
-      const r = await apiPost<{ token: string; user: { onboarding_step: string } }>(
+      const r = await apiPost<{ token: string; refresh_token: string; user: { onboarding_step: string } }>(
         "/auth/verify-otp",
         { mobile, code, language: getLang() },
       );
-      await setToken(r.token);
+      await setTokens(r.token, r.refresh_token);
       const step = r.user.onboarding_step;
       if (step === "profile") router.replace("/onboarding/profile");
       else if (step === "business") router.replace("/onboarding/business");

@@ -382,6 +382,19 @@ export default function DocumentsScreen() {
           ))
         )}
       </ScrollView>
+
+      {/* Continue to Book a Call — shown after onboarding */}
+      <View style={{ paddingHorizontal: spacing.md, paddingBottom: 24, paddingTop: 8, backgroundColor: colors.surface2 }}>
+        <TouchableOpacity
+          style={{ backgroundColor: colors.primary, borderRadius: radius.xl, paddingVertical: 14, alignItems: "center" }}
+          onPress={() => router.replace("/(tabs)")}
+          activeOpacity={0.85}
+        >
+          <Text style={{ fontSize: 15, fontFamily: fonts.displayBold, color: "#fff" }}>
+            Continue to Dashboard →
+          </Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }

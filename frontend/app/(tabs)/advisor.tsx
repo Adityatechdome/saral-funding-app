@@ -21,6 +21,7 @@ import Animated, {
 import {
   ArrowUp, Trash2, ChevronRight,
   FileText, Route, CheckCircle2, Sparkles, Building2, Landmark,
+  MessageSquare, Target,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR } from "@/src/theme";

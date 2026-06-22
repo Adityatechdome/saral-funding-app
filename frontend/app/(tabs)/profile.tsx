@@ -13,7 +13,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { Settings, Bell, Phone, ShieldCheck, LogOut, ChevronRight, Pencil, X, Check, Shield } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, elevation } from "@/src/theme";
-import { apiGet, apiPost, clearToken } from "@/src/api";
+import { apiGet, apiPost, apiLogout } from "@/src/api";
 
 export default function Profile() {
   const router = useRouter();
@@ -48,7 +48,7 @@ export default function Profile() {
         text: "Logout",
         style: "destructive",
         onPress: async () => {
-          await clearToken();
+          await apiLogout();
           router.replace("/login");
         },
       },
@@ -82,6 +82,17 @@ export default function Profile() {
     .slice(0, 2)
     .map((w: string) => w.charAt(0).toUpperCase())
     .join("");
+
+  const bootstrapAdmin = async () => {
+    try {
+      const res = await apiPost<{ message: string }>("/auth/bootstrap-admin", {});
+      Alert.alert("Success", res.message + "\n\nPull to refresh to see Admin Console.", [
+        { text: "OK", onPress: () => router.replace("/(tabs)/profile") },
+      ]);
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Could not promote to admin.");
+    }
+  };
 
   const actions = [
     ...(me?.role && me.role !== "user"
@@ -213,6 +224,21 @@ export default function Profile() {
                 <ChevronRight size={16} color={a.primary ? colors.primaryDark : colors.textDim} strokeWidth={2} />
               </TouchableOpacity>
             ))}
+
+            {(!me?.role || me.role === "user") && (
+              <TouchableOpacity
+                testID="bootstrap-admin-btn"
+                style={[styles.actionRow, { borderColor: "#FEF3C7", backgroundColor: "#FFFBEB" }]}
+                onPress={bootstrapAdmin}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: "#FEF3C7" }]}>
+                  <Shield size={16} color="#92400E" strokeWidth={2} />
+                </View>
+                <Text style={[styles.actionLabel, { color: "#92400E" }]}>Become Admin (Dev)</Text>
+                <ChevronRight size={16} color="#92400E" strokeWidth={2} />
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               testID="logout-btn"

@@ -1,26 +1,38 @@
-"""AI service for Saral Funding — GPT-4o via emergentintegrations universal key.
+"""
+AI service for Saral Funding using Anthropic Claude API.
 
 Provides:
 - match_schemes_with_llm: scheme matching with LLM-generated reasons
-- advisor_chat: free-form advisor conversation (with full history in system prompt)
-- advisor_structured: Phase-A advanced advisor that returns a structured roadmap
-  (recommended schemes, recommended banks, documents, next steps, why)
+- advisor_chat: free-form advisor conversation
+- advisor_structured: structured advisor response (schemes, banks, docs, roadmap)
 """
 import os
 import json
 import logging
 from typing import List, Dict, Any
-from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 logger = logging.getLogger(__name__)
 
-EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+
+
+def _get_client():
+    if not OPENAI_API_KEY:
+        return None
+    try:
+        from openai import OpenAI
+        return OpenAI(api_key=OPENAI_API_KEY)
+    except ImportError:
+        logger.warning("openai package not installed. Run: pip install openai")
+        return None
+
 
 LANGUAGE_NAMES = {
     "en": "English", "hi": "Hindi (हिन्दी)", "gu": "Gujarati (ગુજરાતી)",
     "mr": "Marathi (मराठी)", "bn": "Bengali (বাংলা)", "ta": "Tamil (தமிழ்)",
     "te": "Telugu (తెలుగు)", "kn": "Kannada (ಕನ್ನಡ)", "pa": "Punjabi (ਪੰਜਾਬੀ)",
 }
+
 
 
 def _brief_schemes(schemes: List[Dict]) -> List[Dict]:
@@ -70,13 +82,12 @@ async def match_schemes_with_llm(user: Dict, bp: Dict, fa: Dict, schemes: List[D
             score += 15 if funding_req <= max_f else -10
         cats_l = [c.lower() for c in s.get("categories", [])]
         if industry and industry in cats_l: score += 10
-        tags = s.get("tags", [])
         if is_woman and "women" in s.get("categories", []): score += 10
         if is_woman and s["id"] == "standupindia": score += 10
         if is_sc_st and s["id"] == "standupindia": score += 15
-        if has_udyam and "udyam" in tags: score += 5
-        if existing and "existing_business" in tags: score += 5
-        if not existing and "new_business" in tags: score += 5
+        if has_udyam and "udyam" in s.get("tags", []): score += 5
+        if existing and "existing_business" in s.get("tags", []): score += 5
+        if not existing and "new_business" in s.get("tags", []): score += 5
         if has_gst: score += 2
 
         score = max(40, min(99, score))
@@ -94,23 +105,25 @@ async def match_schemes_with_llm(user: Dict, bp: Dict, fa: Dict, schemes: List[D
     matches.sort(key=lambda x: x["score"], reverse=True)
     top = matches[:8]
 
-    if EMERGENT_LLM_KEY and user.get("state"):
+
+    client = _get_client()
+    if client and user.get("state"):
         try:
-            chat = LlmChat(
-                api_key=EMERGENT_LLM_KEY,
-                session_id=f"match_{user.get('id', 'anon')}",
-                system_message=(
-                    "You are an expert Indian government funding advisor. Given a user profile and a candidate scheme, "
-                    "write ONE short sentence (max 25 words) explaining why this scheme is a fit. Be concrete."
-                ),
-            ).with_model("openai", "gpt-4o")
             top_ids = [m["scheme_id"] for m in top]
             ctx = json.dumps({
                 "user": {k: user.get(k) for k in ("state", "district", "gender", "age", "category")},
                 "business_profile": bp, "assessment": fa,
                 "schemes": [s for s in _brief_schemes(schemes) if s["id"] in top_ids],
             }, ensure_ascii=False)
-            text = (await chat.send_message(UserMessage(text=f"Context JSON:\n{ctx}\n\nReturn a JSON object mapping scheme_id -> reason sentence. Only JSON."))).strip()
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                max_tokens=512,
+                messages=[
+                    {"role": "system", "content": "You are an expert Indian government funding advisor. Given a user profile and candidate schemes, return a JSON object mapping scheme_id -> one short sentence (max 25 words) explaining why it fits. Only JSON, no prose."},
+                    {"role": "user", "content": f"Context:\n{ctx}"},
+                ],
+            )
+            text = response.choices[0].message.content.strip()
             if text.startswith("```"):
                 text = text.strip("`")
                 if text.startswith("json"): text = text[4:]
@@ -120,6 +133,7 @@ async def match_schemes_with_llm(user: Dict, bp: Dict, fa: Dict, schemes: List[D
                     m["reason"] = reasons[m["scheme_id"]]
         except Exception as e:
             logger.warning(f"LLM reasoning failed: {e}")
+
     for m in top:
         if not m["reason"]:
             m["reason"] = "Matches your profile based on industry, location and funding need."
@@ -142,17 +156,26 @@ async def advisor_chat(
         f"Schemes: {json.dumps(_brief_schemes(schemes), ensure_ascii=False)}. "
         f"Banks: {json.dumps(_brief_banks(banks), ensure_ascii=False)}."
     )
-    if history:
-        recent = history[-12:]
-        convo = "\n".join([f"{'User' if h.get('role') == 'user' else 'Advisor'}: {h.get('content', '')}" for h in recent])
-        system_prompt += "\n\nRecent conversation:\n" + convo
 
-    if not EMERGENT_LLM_KEY:
-        return "AI advisor is not configured. Please set EMERGENT_LLM_KEY."
+    client = _get_client()
+    if not client:
+        return (
+            "I'm your Saral Funding Advisor. Based on your profile, I recommend exploring "
+            "the schemes and banks listed on your dashboard. For personalised guidance, "
+            "please book a consultation with our expert team."
+        )
     try:
-        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"advisor_{user_id}", system_message=system_prompt).with_model("openai", "gpt-4o")
-        reply = await chat.send_message(UserMessage(text=message))
-        return reply.strip()
+        messages = [{"role": "system", "content": system_prompt}]
+        for h in history[-12:]:
+            role = "user" if h.get("role") == "user" else "assistant"
+            messages.append({"role": role, "content": h.get("content", "")})
+        messages.append({"role": "user", "content": message})
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=600,
+            messages=messages,
+        )
+        return response.choices[0].message.content.strip()
     except Exception as e:
         logger.exception(f"advisor_chat failed: {e}")
         return "Sorry, I couldn't reach the advisor service right now. Please try again."
@@ -163,37 +186,32 @@ async def advisor_structured(
     matches: List[Dict], banks_recommended: List[Dict], schemes: List[Dict], banks: List[Dict],
     user_query: str, language: str,
 ) -> Dict[str, Any]:
-    """Return structured advisor response: schemes + banks + docs + roadmap + next steps."""
-    lang_name = LANGUAGE_NAMES.get(language, "English")
-    if not EMERGENT_LLM_KEY:
+    client = _get_client()
+    if not client:
         return _fallback_structured(user_query, matches, banks_recommended)
     try:
-        top_schemes = matches[:3]
-        top_banks = banks_recommended[:3]
         prompt_ctx = {
             "user": {k: user_profile.get(k) for k in ("state", "district", "gender", "age", "category")},
-            "business_profile": business_profile,
-            "assessment": assessment,
-            "top_schemes": top_schemes,
-            "top_banks": [{k: b.get(k) for k in ("bank_id", "name", "score", "interest_range", "supports", "why")} for b in top_banks],
-            "available_schemes": _brief_schemes(schemes),
-            "available_banks": _brief_banks(banks),
+            "business_profile": business_profile, "assessment": assessment,
+            "top_schemes": matches[:3],
+            "top_banks": [{k: b.get(k) for k in ("bank_id", "name", "score", "interest_range", "supports", "why")} for b in banks_recommended[:3]],
             "user_query": user_query,
         }
+        lang_name = LANGUAGE_NAMES.get(language, "English")
         system = (
             f"You are Saral Funding Advisor. Reply in {lang_name}. "
-            f"Given the user's query and context, produce a STRICT JSON object with these keys:\n"
-            f'  "summary": one paragraph (max 60 words) answering the user query,\n'
-            f'  "schemes": array of up to 3 objects {{"name", "why", "estimated_funding", "estimated_subsidy"}},\n'
-            f'  "banks": array of up to 3 objects {{"name", "why", "interest_range"}},\n'
-            f'  "documents": array of 5–8 short strings,\n'
-            f'  "roadmap": array of 4–6 short ordered steps,\n'
-            f'  "next_steps": array of 2–3 actionable next steps,\n'
-            f'  "why": short paragraph (max 40 words) explaining the overall recommendation rationale.\n'
-            f"Use only the provided data. No prose outside JSON."
+            f"Produce a STRICT JSON object with keys: summary, schemes (array of {{name,why,estimated_funding,estimated_subsidy}}), "
+            f"banks (array of {{name,why,interest_range}}), documents (5-8 strings), roadmap (4-6 steps), next_steps (2-3 steps), why. No prose outside JSON."
         )
-        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"advisor_struct", system_message=system).with_model("openai", "gpt-4o")
-        text = (await chat.send_message(UserMessage(text=json.dumps(prompt_ctx, ensure_ascii=False)))).strip()
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=1024,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(prompt_ctx, ensure_ascii=False)},
+            ],
+        )
+        text = response.choices[0].message.content.strip()
         if text.startswith("```"):
             text = text.strip("`")
             if text.startswith("json"): text = text[4:]

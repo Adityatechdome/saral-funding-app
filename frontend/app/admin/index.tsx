@@ -10,7 +10,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   Users, Phone, Target, Landmark,
-  TrendingUp, MessageSquare, ChevronRight, Percent, Eye, Settings,
+  TrendingUp, MessageSquare, ChevronRight, Percent, Eye, Settings, Shield,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts } from "@/src/theme";
@@ -30,6 +30,7 @@ const ALL_MODULES = [
   { id: "users", label: "Users", sub: "Manage & view", Icon: Users, color: colors.primarySoft, iconColor: colors.primaryDark },
   { id: "consultations", label: "Consultations", sub: "Track & update", Icon: Phone, color: "#EDE9FE", iconColor: "#5B21B6" },
   { id: "leads", label: "CRM / Leads", sub: "Pipeline & stages", Icon: Target, color: "#FEF3C7", iconColor: "#92400E" },
+  { id: "team", label: "Team Members", sub: "Invite & manage roles", Icon: Shield, color: "#DCFCE7", iconColor: "#15803D" },
   { id: "settings", label: "Settings", sub: "App configuration", Icon: Settings, color: "#F5F3FF", iconColor: "#6D28D9" },
 ];
 

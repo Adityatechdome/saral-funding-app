@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Bell, ChevronRight, Phone, Building2, TrendingUp, AlertCircle, Calendar, Zap } from "lucide-react-native";
+import { Bell, ChevronRight, Phone, Building2, TrendingUp, AlertCircle, Calendar, Zap, FolderOpen } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR, elevation } from "@/src/theme";
 import { apiGet, apiPost } from "@/src/api";
@@ -205,7 +205,7 @@ export default function Dashboard() {
           )}
 
           {/* ── Quick Actions ── */}
-          <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
+          <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
             <TouchableOpacity
               testID="book-cta"
               style={[styles.quickAction, { flex: 1.5 }]}
@@ -227,6 +227,35 @@ export default function Dashboard() {
               <Text style={styles.qaSub}>Compare offers</Text>
             </TouchableOpacity>
           </View>
+          {/* ── Document Vault ── */}
+          <TouchableOpacity
+            style={[styles.quickAction, { flexDirection: "row", alignItems: "center", marginBottom: 10, paddingVertical: 14 }]}
+            onPress={() => router.push("/documents")}
+            activeOpacity={0.85}
+            testID="documents-cta"
+          >
+            <FolderOpen size={20} color={colors.primaryDark} strokeWidth={2} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.qaTitle}>Document Vault</Text>
+              <Text style={styles.qaSub}>Upload & manage your documents</Text>
+            </View>
+            <ChevronRight size={16} color={colors.primaryDark} strokeWidth={2} />
+          </TouchableOpacity>
+
+          {/* ── My Applications tracker ── */}
+          <TouchableOpacity
+            style={[styles.quickAction, { flexDirection: "row", alignItems: "center", marginBottom: 16, paddingVertical: 14 }]}
+            onPress={() => router.push("/(tabs)/applications")}
+            activeOpacity={0.85}
+            testID="my-applications-cta"
+          >
+            <TrendingUp size={20} color={colors.primaryDark} strokeWidth={2} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.qaTitle}>My Applications</Text>
+              <Text style={styles.qaSub}>Track your scheme applications</Text>
+            </View>
+            <ChevronRight size={16} color={colors.primaryDark} strokeWidth={2} />
+          </TouchableOpacity>
 
           {/* ── Upcoming Consultation ── */}
           {next && (
@@ -243,38 +272,24 @@ export default function Dashboard() {
             </View>
           )}
 
-          {/* ── Recommended Schemes ── */}
-          <View style={styles.rowBetween}>
-            <Text style={styles.sectionTitle}>Recommended Schemes</Text>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/funding-case")} testID="view-all-btn">
-              <Text style={styles.viewAll}>View all</Text>
+          {/* ── Applications prompt ── */}
+          <View style={styles.card}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <TrendingUp size={14} color={colors.primaryDark} strokeWidth={2} />
+              <Text style={styles.sectionLabel}>Your Applications</Text>
+            </View>
+            <Text style={{ fontSize: 13, fontFamily: fonts.regular, color: colors.textDim, marginBottom: 12, lineHeight: 19 }}>
+              After your consultation call, our team will assign the right schemes and track your applications here.
+            </Text>
+            <TouchableOpacity
+              style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
+              onPress={() => router.push("/(tabs)/applications")}
+              activeOpacity={0.8}
+            >
+              <Text style={{ fontSize: 13, fontFamily: fonts.semiBold, color: colors.primary }}>View My Applications</Text>
+              <ChevronRight size={14} color={colors.primary} strokeWidth={2.5} />
             </TouchableOpacity>
           </View>
-
-          {(data?.matches || []).slice(0, 3).map((m) => (
-            <TouchableOpacity
-              key={m.scheme_id}
-              testID={`match-${m.scheme_id}`}
-              style={styles.schemeCard}
-              onPress={() => router.push({ pathname: "/scheme/[id]", params: { id: m.scheme_id } })}
-              activeOpacity={0.85}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.schemeName} numberOfLines={1}>{m.name}</Text>
-                <Text style={styles.schemeReason} numberOfLines={2}>{m.reason}</Text>
-                <View style={{ flexDirection: "row", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
-                  <Text style={styles.schemeAmount}>Up to {formatINR(m.funding_estimate)}</Text>
-                  {m.subsidy_estimate > 0 && (
-                    <Text style={styles.schemeSub}>Subsidy {formatINR(m.subsidy_estimate)}</Text>
-                  )}
-                </View>
-              </View>
-              <View style={styles.scoreBadge}>
-                <Text style={styles.scoreText}>{m.score}%</Text>
-                <Text style={styles.scoreSubText}>match</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
 
         </View>
       </ScrollView>
