@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -24,6 +25,21 @@ export default function Profile() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "info" | "error" } | null>(null);
+  const toastAnim = useRef(new Animated.Value(0)).current;
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((message: string, type: "info" | "error" = "info") => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ message, type });
+    Animated.spring(toastAnim, { toValue: 1, useNativeDriver: true, speed: 20 }).start();
+    toastTimer.current = setTimeout(() => {
+      Animated.timing(toastAnim, { toValue: 0, duration: 250, useNativeDriver: true }).start(() => setToast(null));
+    }, 3000);
+  }, [toastAnim]);
+
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
   // Edit form state
   const [editName, setEditName] = useState("");
   const [editDistrict, setEditDistrict] = useState("");
@@ -99,14 +115,18 @@ export default function Profile() {
     setBootstrapping(true);
     try {
       const res = await apiPost<{ message: string }>("/auth/bootstrap-admin", {});
-      // Re-fetch me so role updates immediately
       const updated = await apiGet<any>("/auth/me");
       setMe(updated);
       Alert.alert("Success ✓", res.message, [
         { text: "Go to Admin", onPress: () => router.push("/admin") },
       ]);
     } catch (e: any) {
-      Alert.alert("Failed", e.message || "Could not promote to admin. Make sure Render has finished deploying.");
+      const msg: string = e.message || "";
+      if (msg.toLowerCase().includes("super_admin already exists")) {
+        showToast("A Super Admin is already set up", "info");
+      } else {
+        Alert.alert("Failed", msg || "Could not promote to admin. Make sure the server is running.");
+      }
     } finally {
       setBootstrapping(false);
     }
@@ -279,6 +299,22 @@ export default function Profile() {
 
         </View>
       </ScrollView>
+      {/* Toast */}
+      {toast && (
+        <Animated.View
+          style={[
+            styles.toast,
+            toast.type === "error" ? styles.toastError : styles.toastInfo,
+            {
+              opacity: toastAnim,
+              transform: [{ translateY: toastAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <Text style={styles.toastText}>{toast.message}</Text>
+        </Animated.View>
+      )}
     </SafeAreaView>
   );
 }
@@ -516,5 +552,30 @@ const styles = StyleSheet.create({
   },
   actionLabelPrimary: {
     color: colors.primaryDark,
+  },
+  toast: {
+    position: "absolute",
+    bottom: 24,
+    alignSelf: "center",
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  toastInfo: {
+    backgroundColor: "#1C1C1E",
+  },
+  toastError: {
+    backgroundColor: "#DC2626",
+  },
+  toastText: {
+    fontSize: 13,
+    fontFamily: fonts.semiBold,
+    color: "#FFF",
+    textAlign: "center",
   },
 });
