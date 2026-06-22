@@ -230,7 +230,7 @@ export default function Dashboard() {
           {/* ── My Applications tracker ── */}
           <TouchableOpacity
             style={[styles.quickAction, { flexDirection: "row", alignItems: "center", marginBottom: 16, paddingVertical: 14 }]}
-            onPress={() => router.push("/my-applications")}
+            onPress={() => router.push("/(tabs)/applications")}
             activeOpacity={0.85}
             testID="my-applications-cta"
           >
