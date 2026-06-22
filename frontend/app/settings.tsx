@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Check, Globe, Info, Shield, FileText, LogOut, ChevronRight } from "lucide-react-native";
@@ -25,22 +25,26 @@ export default function Settings() {
     await apiPost("/language", { language: code }).catch(() => {});
   };
 
-  const logout = () => {
-    Alert.alert(
-      "Logout",
-      "Are you sure you want to log out of Saral Funding?",
-      [
+  const logout = async () => {
+    const doLogout = async () => {
+      await apiLogout();
+      if (Platform.OS === "web") {
+        window.location.href = "/login";
+      } else {
+        router.replace("/login");
+      }
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm("Are you sure you want to log out of Saral Funding?")) {
+        await doLogout();
+      }
+    } else {
+      Alert.alert("Logout", "Are you sure you want to log out of Saral Funding?", [
         { text: "Cancel", style: "cancel" },
-        {
-          text: "Logout",
-          style: "destructive",
-          onPress: async () => {
-            await apiLogout();
-            router.replace("/login");
-          },
-        },
-      ]
-    );
+        { text: "Logout", style: "destructive", onPress: doLogout },
+      ]);
+    }
   };
 
   return (
@@ -61,7 +65,7 @@ export default function Settings() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.accountName}>{user.full_name || "—"}</Text>
-                  <Text style={styles.accountMobile}>+91 {user.mobile}</Text>
+                  <Text style={styles.accountMobile}>{user.mobile?.startsWith("+") ? user.mobile : `+91 ${user.mobile}`}</Text>
                 </View>
               </View>
             </View>

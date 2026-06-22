@@ -40,6 +40,60 @@ db = client[os.environ['DB_NAME']]
 app = FastAPI(title="Saral Funding API", version="1.0.0", docs_url=None, redoc_url=None)
 api_router = APIRouter(prefix="/api")
 
+
+@app.get("/")
+async def root():
+    return {
+        "service": "Saral Funding API",
+        "version": "1.0.0",
+        "status": "running",
+        "docs": "/health for full health check"
+    }
+
+
+@app.get("/health")
+async def health_check():
+    # Check MongoDB
+    try:
+        await db.command("ping")
+        mongo_status = "connected"
+        collections = await db.list_collection_names()
+        counts = {
+            "users": await db.users.count_documents({}),
+            "schemes": await db.schemes.count_documents({}),
+            "banks": await db.banks.count_documents({}),
+            "leads": await db.leads.count_documents({}),
+            "consultations": await db.consultations.count_documents({}),
+        }
+    except Exception as e:
+        mongo_status = f"error: {str(e)}"
+        collections = []
+        counts = {}
+
+    # Check optional services
+    twilio_configured = bool(os.environ.get("TWILIO_ACCOUNT_SID"))
+    openai_configured = bool(os.environ.get("OPENAI_API_KEY"))
+    azure_configured = bool(os.environ.get("AZURE_STORAGE_CONNECTION_STRING"))
+    ghl_configured = bool(os.environ.get("GHL_API_KEY"))
+    setu_configured = bool(os.environ.get("SETU_CLIENT_ID"))
+
+    return {
+        "status": "ok" if mongo_status == "connected" else "degraded",
+        "database": {
+            "mongodb": mongo_status,
+            "collections": len(collections),
+            "counts": counts,
+        },
+        "services": {
+            "twilio_otp": "configured" if twilio_configured else "mock_mode (OTP=123456)",
+            "openai": "configured" if openai_configured else "not configured (fallback active)",
+            "azure_storage": "configured" if azure_configured else "not configured",
+            "ghl_crm": "configured" if ghl_configured else "not configured",
+            "setu_aa": "configured" if setu_configured else "not configured",
+        },
+        "environment": os.environ.get("DB_NAME", "saral_funding"),
+    }
+
 # ---- Security middleware ----
 ALLOWED_ORIGINS = os.environ.get(
     "ALLOWED_ORIGINS",
@@ -1317,20 +1371,27 @@ async def seed_db():
         await db.banks.update_one({"id": b["id"]}, {"$setOnInsert": b.copy()}, upsert=True)
     logging.info(f"Upserted {len(BANKS_SEED)} banks")
     # seed super admin (idempotent)
-    admin_mobile = "9000000000"
+    # Must use E.164 format (+91...) to match what sanitise_mobile() produces at login
+    admin_mobile = os.environ.get("SUPER_ADMIN_MOBILE", "9000000000").strip()
+    if not admin_mobile.startswith("+"):
+        admin_mobile = "+91" + admin_mobile
+    # Fix any existing record that was stored without +91
+    await db.users.update_many(
+        {"mobile": admin_mobile.lstrip("+91"), "role": "super_admin"},
+        {"$set": {"mobile": admin_mobile, "role": "super_admin"}}
+    )
     existing_admin = await db.users.find_one({"mobile": admin_mobile})
     if not existing_admin:
         await db.users.insert_one({
             "id": str(uuid.uuid4()), "mobile": admin_mobile, "language": "en",
-            "full_name": "Super Admin", "state": "Gujarat", "district": "Surat",
-            "gender": "Male", "age": 30, "category": "General",
-            "onboarding_step": "done", "role": "super_admin",
+            "full_name": "Super Admin", "onboarding_step": "done", "role": "super_admin",
             "created_at": now_iso(), "updated_at": now_iso(),
         })
         logging.info(f"Seeded super admin (mobile={admin_mobile})")
     else:
-        # ensure role is super_admin
+        # ensure role is always super_admin even if accidentally demoted
         await db.users.update_one({"mobile": admin_mobile}, {"$set": {"role": "super_admin"}})
+        logging.info(f"Super admin verified (mobile={admin_mobile})")
 
 
 

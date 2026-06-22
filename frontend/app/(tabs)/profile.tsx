@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  Platform,
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -44,17 +45,26 @@ export default function Profile() {
   );
 
   const logout = async () => {
-    Alert.alert("Logout", "Are you sure you want to logout?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Logout",
-        style: "destructive",
-        onPress: async () => {
-          await apiLogout();
-          router.replace("/login");
-        },
-      },
-    ]);
+    const doLogout = async () => {
+      await apiLogout();
+      if (Platform.OS === "web") {
+        window.location.href = "/login";
+      } else {
+        router.replace("/login");
+      }
+    };
+
+    if (Platform.OS === "web") {
+      // Alert.alert on web maps to window.confirm which only has OK/Cancel
+      if (window.confirm("Are you sure you want to logout?")) {
+        await doLogout();
+      }
+    } else {
+      Alert.alert("Logout", "Are you sure you want to logout?", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Logout", style: "destructive", onPress: doLogout },
+      ]);
+    }
   };
 
   const saveEdits = async () => {
@@ -159,7 +169,7 @@ export default function Profile() {
           ) : (
             <Text style={styles.name}>{me?.full_name || "—"}</Text>
           )}
-          <Text style={styles.mobile}>+91 {me?.mobile}</Text>
+          <Text style={styles.mobile}>{me?.mobile?.startsWith("+") ? me.mobile : `+91 ${me?.mobile}`}</Text>
           <View style={styles.rolePill}>
             <ShieldCheck size={11} color={colors.primaryDark} strokeWidth={2} />
             <Text style={styles.roleText}>{me?.role === "user" ? "User" : me?.role?.replace(/_/g, " ") || "User"}</Text>

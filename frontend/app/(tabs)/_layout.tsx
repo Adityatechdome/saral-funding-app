@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
 import { View, Text, StyleSheet } from "react-native";
-import { LayoutDashboard, ClipboardList, Sparkles, CircleUser } from "lucide-react-native";
+import { LayoutDashboard, ClipboardList, Sparkles, FolderOpen, CircleUser } from "lucide-react-native";
 
 import { colors, fonts } from "@/src/theme";
 
@@ -67,6 +67,14 @@ export default function TabsLayout() {
         options={{
           tabBarIcon: ({ focused }) => (
             <TabIcon label="Advisor" focused={focused} Icon={Sparkles} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="documents"
+        options={{
+          tabBarIcon: ({ focused }) => (
+            <TabIcon label="Documents" focused={focused} Icon={FolderOpen} />
           ),
         }}
       />
