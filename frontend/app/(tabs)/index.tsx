@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Bell, ChevronRight, Phone, Building2, TrendingUp, AlertCircle, Calendar, Zap } from "lucide-react-native";
+import { Bell, ChevronRight, Phone, Building2, TrendingUp, AlertCircle, Calendar, Zap, FolderOpen } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR, elevation } from "@/src/theme";
 import { apiGet, apiPost } from "@/src/api";
@@ -227,6 +227,21 @@ export default function Dashboard() {
               <Text style={styles.qaSub}>Compare offers</Text>
             </TouchableOpacity>
           </View>
+          {/* ── Document Vault ── */}
+          <TouchableOpacity
+            style={[styles.quickAction, { flexDirection: "row", alignItems: "center", marginBottom: 10, paddingVertical: 14 }]}
+            onPress={() => router.push("/documents")}
+            activeOpacity={0.85}
+            testID="documents-cta"
+          >
+            <FolderOpen size={20} color={colors.primaryDark} strokeWidth={2} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.qaTitle}>Document Vault</Text>
+              <Text style={styles.qaSub}>Upload & manage your documents</Text>
+            </View>
+            <ChevronRight size={16} color={colors.primaryDark} strokeWidth={2} />
+          </TouchableOpacity>
+
           {/* ── My Applications tracker ── */}
           <TouchableOpacity
             style={[styles.quickAction, { flexDirection: "row", alignItems: "center", marginBottom: 16, paddingVertical: 14 }]}
