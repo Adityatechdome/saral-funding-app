@@ -83,6 +83,17 @@ export default function Profile() {
     .map((w: string) => w.charAt(0).toUpperCase())
     .join("");
 
+  const bootstrapAdmin = async () => {
+    try {
+      const res = await apiPost<{ message: string }>("/auth/bootstrap-admin", {});
+      Alert.alert("Success", res.message + "\n\nPull to refresh to see Admin Console.", [
+        { text: "OK", onPress: () => router.replace("/(tabs)/profile") },
+      ]);
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Could not promote to admin.");
+    }
+  };
+
   const actions = [
     ...(me?.role && me.role !== "user"
       ? [{ id: "admin", label: "Admin Console", Icon: Shield, onPress: () => router.push("/admin"), primary: true }]
@@ -213,6 +224,21 @@ export default function Profile() {
                 <ChevronRight size={16} color={a.primary ? colors.primaryDark : colors.textDim} strokeWidth={2} />
               </TouchableOpacity>
             ))}
+
+            {(!me?.role || me.role === "user") && (
+              <TouchableOpacity
+                testID="bootstrap-admin-btn"
+                style={[styles.actionRow, { borderColor: "#FEF3C7", backgroundColor: "#FFFBEB" }]}
+                onPress={bootstrapAdmin}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: "#FEF3C7" }]}>
+                  <Shield size={16} color="#92400E" strokeWidth={2} />
+                </View>
+                <Text style={[styles.actionLabel, { color: "#92400E" }]}>Become Admin (Dev)</Text>
+                <ChevronRight size={16} color="#92400E" strokeWidth={2} />
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               testID="logout-btn"
