@@ -388,6 +388,16 @@ async def get_me(user=Depends(get_current_user)):
     return UserOut(**user).dict()
 
 
+@api_router.post("/auth/bootstrap-admin")
+async def bootstrap_admin(user=Depends(get_current_user)):
+    """Promote the calling user to super_admin IF no super_admin exists yet."""
+    existing_admin = await db.users.find_one({"role": "super_admin"})
+    if existing_admin and existing_admin["id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="A super_admin already exists. Use /admin/users/{uid}/role to manage roles.")
+    await db.users.update_one({"id": user["id"]}, {"$set": {"role": "super_admin"}})
+    return {"message": "You are now super_admin", "user_id": user["id"]}
+
+
 # ===========================================================================
 # ONBOARDING
 # ===========================================================================
