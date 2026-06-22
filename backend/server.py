@@ -1720,6 +1720,13 @@ async def get_my_recommendations(user=Depends(get_current_user)):
 
 app.include_router(api_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# Serve local uploads in dev (no-op when Azure is configured)
+import pathlib as _pathlib
+from fastapi.staticfiles import StaticFiles as _StaticFiles
+_uploads_dir = _pathlib.Path("uploads")
+_uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", _StaticFiles(directory=str(_uploads_dir)), name="uploads")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
