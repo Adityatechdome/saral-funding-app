@@ -89,10 +89,6 @@ export default function DocumentsTab() {
   useFocusEffect(useCallback(() => { load(); }, []));
 
   const handlePickFile = async () => {
-    if (Platform.OS === "web") {
-      Alert.alert("Not supported", "File upload is not supported in the web browser. Please use the mobile app.");
-      return;
-    }
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ["application/pdf", "image/*"],
@@ -120,11 +116,18 @@ export default function DocumentsTab() {
       const token = await getToken();
       const formData = new FormData();
       formData.append("doc_type", selected);
-      formData.append("file", {
-        uri: pickedFile.uri,
-        name: pickedFile.name,
-        type: pickedFile.mimeType || "application/octet-stream",
-      } as any);
+
+      if (Platform.OS === "web") {
+        const blobRes = await fetch(pickedFile.uri);
+        const blob = await blobRes.blob();
+        formData.append("file", blob, pickedFile.name);
+      } else {
+        formData.append("file", {
+          uri: pickedFile.uri,
+          name: pickedFile.name,
+          type: pickedFile.mimeType || "application/octet-stream",
+        } as any);
+      }
 
       const response = await fetch(`${API_BASE}/documents/upload`, {
         method: "POST",
