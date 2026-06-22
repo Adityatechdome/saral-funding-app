@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -21,6 +22,7 @@ export default function Profile() {
   const [bp, setBp] = useState<any>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [bootstrapping, setBootstrapping] = useState(false);
   // Edit form state
   const [editName, setEditName] = useState("");
   const [editDistrict, setEditDistrict] = useState("");
@@ -84,13 +86,19 @@ export default function Profile() {
     .join("");
 
   const bootstrapAdmin = async () => {
+    setBootstrapping(true);
     try {
       const res = await apiPost<{ message: string }>("/auth/bootstrap-admin", {});
-      Alert.alert("Success", res.message + "\n\nPull to refresh to see Admin Console.", [
-        { text: "OK", onPress: () => router.replace("/(tabs)/profile") },
+      // Re-fetch me so role updates immediately
+      const updated = await apiGet<any>("/auth/me");
+      setMe(updated);
+      Alert.alert("Success ✓", res.message, [
+        { text: "Go to Admin", onPress: () => router.push("/admin") },
       ]);
     } catch (e: any) {
-      Alert.alert("Error", e.message || "Could not promote to admin.");
+      Alert.alert("Failed", e.message || "Could not promote to admin. Make sure Render has finished deploying.");
+    } finally {
+      setBootstrapping(false);
     }
   };
 
@@ -228,15 +236,20 @@ export default function Profile() {
             {(!me?.role || me.role === "user") && (
               <TouchableOpacity
                 testID="bootstrap-admin-btn"
-                style={[styles.actionRow, { borderColor: "#FEF3C7", backgroundColor: "#FFFBEB" }]}
+                style={[styles.actionRow, { borderColor: "#FEF3C7", backgroundColor: "#FFFBEB", opacity: bootstrapping ? 0.6 : 1 }]}
                 onPress={bootstrapAdmin}
+                disabled={bootstrapping}
                 activeOpacity={0.8}
               >
                 <View style={[styles.actionIcon, { backgroundColor: "#FEF3C7" }]}>
-                  <Shield size={16} color="#92400E" strokeWidth={2} />
+                  {bootstrapping
+                    ? <ActivityIndicator size="small" color="#92400E" />
+                    : <Shield size={16} color="#92400E" strokeWidth={2} />}
                 </View>
-                <Text style={[styles.actionLabel, { color: "#92400E" }]}>Become Admin (Dev)</Text>
-                <ChevronRight size={16} color="#92400E" strokeWidth={2} />
+                <Text style={[styles.actionLabel, { color: "#92400E" }]}>
+                  {bootstrapping ? "Connecting to server…" : "Become Admin (Dev)"}
+                </Text>
+                {!bootstrapping && <ChevronRight size={16} color="#92400E" strokeWidth={2} />}
               </TouchableOpacity>
             )}
 
