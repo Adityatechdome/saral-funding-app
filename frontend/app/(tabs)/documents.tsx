@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,9 +9,11 @@ import {
   Alert,
   Linking,
   Platform,
+  FlatList,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import {
   CheckCircle2,
@@ -24,6 +26,9 @@ import {
   ExternalLink,
   FolderOpen,
   Info,
+  ChevronLeft,
+  FileSearch,
+  User as UserIcon,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts } from "@/src/theme";
@@ -69,7 +74,8 @@ const badge = StyleSheet.create({
   text: { fontSize: 11, fontFamily: fonts.bold, textTransform: "capitalize" },
 });
 
-export default function DocumentsTab() {
+function UserDocumentsTab() {
+  const router = useRouter();
   const [docs, setDocs] = useState<any[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [pickedFile, setPickedFile] = useState<PickedFile | null>(null);
@@ -194,10 +200,13 @@ export default function DocumentsTab() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface2 }} edges={["top"]} testID="documents-tab">
       {/* Header */}
       <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <ChevronLeft size={22} color={colors.text} strokeWidth={2} />
+        </TouchableOpacity>
         <View style={s.headerIcon}>
           <FolderOpen size={18} color={colors.primaryDark} strokeWidth={2} />
         </View>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={s.headerTitle}>Document Vault</Text>
           <Text style={s.headerSub}>{docs.length} document{docs.length !== 1 ? "s" : ""} uploaded</Text>
         </View>
@@ -344,6 +353,13 @@ const s = StyleSheet.create({
     backgroundColor: "#FFF",
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerIcon: {
     width: 36,
@@ -516,3 +532,143 @@ const s = StyleSheet.create({
     lineHeight: 16,
   },
 });
+
+// ── Admin: All User Documents ──
+function AdminUserDocuments() {
+  const [docs, setDocs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await apiGet<any[]>("/admin/documents");
+      setDocs(Array.isArray(res) ? res : []);
+    } catch {
+      setDocs([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface2 }} edges={["top"]}>
+      <View style={adocS.header}>
+        <FileSearch size={18} color={colors.primaryDark} strokeWidth={2} />
+        <View style={{ flex: 1 }}>
+          <Text style={adocS.headerTitle}>User Documents</Text>
+          <Text style={adocS.headerSub}>{docs.length} document{docs.length !== 1 ? "s" : ""} total</Text>
+        </View>
+      </View>
+
+      {loading ? (
+        <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+      ) : docs.length === 0 ? (
+        <View style={adocS.emptyBox}>
+          <FileSearch size={44} color={colors.textDim} strokeWidth={1.5} />
+          <Text style={adocS.emptyTitle}>No Documents Found</Text>
+          <Text style={adocS.emptySub}>User documents will appear here once uploaded.</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={docs}
+          keyExtractor={(d) => d.id}
+          contentContainerStyle={{ padding: spacing.md, paddingBottom: 100 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); load(); }}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+          renderItem={({ item }) => (
+            <View style={adocS.docCard}>
+              <View style={adocS.docIcon}>
+                <FileText size={16} color={colors.primaryDark} strokeWidth={2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={adocS.docType}>{item.doc_type}</Text>
+                <View style={adocS.userRow}>
+                  <UserIcon size={10} color={colors.textMuted} strokeWidth={2} />
+                  <Text style={adocS.userName}>{item.user_name || item.user_id}</Text>
+                </View>
+                <Text style={adocS.fileName} numberOfLines={1}>{item.filename || item.file_name}</Text>
+              </View>
+              <View style={[adocS.statusBadge, item.status === "verified" ? adocS.statusVerified : item.status === "rejected" ? adocS.statusRejected : adocS.statusPending]}>
+                <Text style={[adocS.statusText, item.status === "verified" ? { color: colors.primaryDark } : item.status === "rejected" ? { color: "#DC2626" } : { color: "#92400E" }]}>
+                  {item.status}
+                </Text>
+              </View>
+            </View>
+          )}
+        />
+      )}
+    </SafeAreaView>
+  );
+}
+
+const adocS = StyleSheet.create({
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: spacing.md,
+    paddingTop: 14,
+    paddingBottom: 12,
+    backgroundColor: "#FFF",
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  headerTitle: { fontSize: 18, fontFamily: fonts.displayBold, color: colors.text },
+  headerSub: { fontSize: 11, fontFamily: fonts.regular, color: colors.textMuted, marginTop: 1 },
+  emptyBox: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, marginTop: -60 },
+  emptyTitle: { fontSize: 18, fontFamily: fonts.displayBold, color: colors.text },
+  emptySub: { fontSize: 13, fontFamily: fonts.regular, color: colors.textMuted, textAlign: "center", lineHeight: 20 },
+  docCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#FFF",
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    marginBottom: 8,
+  },
+  docIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.lg,
+    backgroundColor: colors.primarySoft,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  docType: { fontSize: 13, fontFamily: fonts.semiBold, color: colors.text },
+  userRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
+  userName: { fontSize: 11, fontFamily: fonts.medium, color: colors.textMuted },
+  fileName: { fontSize: 11, fontFamily: fonts.regular, color: colors.textDim, marginTop: 2 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill, flexShrink: 0 },
+  statusVerified: { backgroundColor: colors.primarySoft },
+  statusRejected: { backgroundColor: "#FEE2E2" },
+  statusPending: { backgroundColor: "#FEF3C7" },
+  statusText: { fontSize: 10, fontFamily: fonts.bold, textTransform: "capitalize" },
+});
+
+export default function DocumentsTab() {
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    apiGet<any>("/auth/me")
+      .then((me: any) => setIsAdmin(me?.role && me.role !== "user"))
+      .catch(() => setIsAdmin(false));
+  }, []);
+
+  if (isAdmin === null) return null;
+  if (isAdmin) return <AdminUserDocuments />;
+  return <UserDocumentsTab />;
+}

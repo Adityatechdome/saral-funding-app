@@ -21,7 +21,7 @@ import Animated, {
 import {
   ArrowUp, Trash2, ChevronRight,
   FileText, Route, CheckCircle2, Sparkles, Building2, Landmark,
-  MessageSquare, Target,
+  MessageSquare, Target, CalendarDays,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR } from "@/src/theme";
@@ -61,7 +61,7 @@ const typStyles = StyleSheet.create({
   wrap: { alignItems: "flex-start", paddingHorizontal: spacing.md, paddingBottom: 8 },
 });
 
-export default function Advisor() {
+function AdvisorChat() {
   const router = useRouter();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -544,3 +544,63 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { backgroundColor: colors.primaryLight, opacity: 0.5 },
 });
+
+// ── Admin Calendly View ──
+function AdminCalendly() {
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface2 }} edges={["top"]}>
+      <View style={calStyles.header}>
+        <Text style={calStyles.title}>Calendly</Text>
+      </View>
+      <View style={calStyles.emptyBox}>
+        <CalendarDays size={52} color={colors.textDim} strokeWidth={1.5} />
+        <Text style={calStyles.emptyTitle}>No Calendly Configured</Text>
+        <Text style={calStyles.emptySub}>
+          Connect your Calendly account in Settings to manage bookings and consultation schedules here.
+        </Text>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const calStyles = StyleSheet.create({
+  header: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: "#FFF",
+  },
+  title: { fontSize: 22, fontFamily: fonts.displayBold, color: colors.text },
+  emptyBox: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg,
+    gap: 12,
+    marginTop: -60,
+  },
+  emptyTitle: { fontSize: 18, fontFamily: fonts.displayBold, color: colors.text },
+  emptySub: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: colors.textMuted,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+});
+
+export default function Advisor() {
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    apiGet<any>("/auth/me")
+      .then((me: any) => setIsAdmin(me?.role && me.role !== "user"))
+      .catch(() => setIsAdmin(false));
+  }, []);
+
+  if (isAdmin === null) return null;
+  if (isAdmin) return <AdminCalendly />;
+  return <AdvisorChat />;
+}

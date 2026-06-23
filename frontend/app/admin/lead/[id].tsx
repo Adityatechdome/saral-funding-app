@@ -694,7 +694,7 @@ export default function LeadDetail() {
             </View>
 
             <View style={styles.stagesGrid}>
-              {["documents_submitted","call_done","scheme_identified","application_filed","under_review","approved","disbursed","rejected"].map((st) => {
+              {["call_done","documents_submitted","scheme_identified","application_filed","under_review","approved","disbursed","rejected"].map((st) => {
                 const labels: Record<string,string> = {
                   documents_submitted:"Docs Submitted", call_done:"Call Done",
                   scheme_identified:"Scheme ID'd", application_filed:"App Filed",

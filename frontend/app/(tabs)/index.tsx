@@ -9,11 +9,14 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Bell, ChevronRight, Phone, Building2, TrendingUp, AlertCircle, Calendar, Zap, FolderOpen } from "lucide-react-native";
+import {
+  Bell, ChevronRight, Phone, Building2, TrendingUp, AlertCircle, Calendar, Zap, FolderOpen, Landmark,
+  Users, Target, BarChart2, FolderOpen as FolderIcon, Settings, Shield, Percent, Eye, MessageSquare,
+} from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR, elevation } from "@/src/theme";
 import { apiGet, apiPost } from "@/src/api";
-import { DashboardSkeleton } from "@/src/components/SkeletonLoader";
+import { DashboardSkeleton, SkeletonBox } from "@/src/components/SkeletonLoader";
 import ReadinessRing from "@/src/components/ReadinessRing";
 
 type Match = { scheme_id: string; name: string; score: number; funding_estimate: number; subsidy_estimate: number; reason: string };
@@ -21,6 +24,68 @@ type DashData = { matches: Match[]; funding_estimate: number; subsidy_estimate: 
 type BankRec = { bank_id: string; name: string; short_name: string; score: number; interest_range: string; why: string };
 type ReadinessAction = { title: string; detail: string; weight: string };
 type Readiness = { score: number; max: number; actions: ReadinessAction[] };
+type Overview = {
+  total_users: number; total_admins: number; total_schemes: number;
+  total_consultations: number; total_leads: number; total_chats: number;
+  daily_active_users: number; conversion_rate: number;
+  scheme_views: number; bank_recommendation_views: number;
+};
+
+const ROLE_PERMISSIONS: Record<string, string[]> = {
+  super_admin: ["users", "consultations", "leads", "settings"],
+  manager: ["users", "consultations", "leads"],
+  expert: ["consultations"],
+  sales_executive: ["leads"],
+  support_executive: ["consultations", "leads"],
+};
+
+function canAccess(role: string, module: string): boolean {
+  if (role === "super_admin") return true;
+  return (ROLE_PERMISSIONS[role] ?? []).includes(module);
+}
+
+const ALL_MODULES = [
+  { id: "users",         label: "Users",          sub: "Manage & view",         Icon: Users,       color: colors.primarySoft, iconColor: colors.primaryDark },
+  { id: "consultations", label: "Consultations",  sub: "Track & update",        Icon: Phone,       color: "#EDE9FE",          iconColor: "#5B21B6" },
+  { id: "leads",         label: "CRM / Leads",    sub: "Pipeline & stages",     Icon: Target,      color: "#FEF3C7",          iconColor: "#92400E" },
+  { id: "schemes",       label: "Schemes",         sub: "Enable & disable",      Icon: Landmark,    color: "#FFF7ED",          iconColor: "#C2410C" },
+  { id: "documents",    label: "Documents",       sub: "Review & approve docs", Icon: FolderIcon,  color: "#F0FDF4",          iconColor: "#15803D" },
+  { id: "analytics",    label: "Analytics",       sub: "Charts & trends",       Icon: BarChart2,   color: "#DBEAFE",          iconColor: "#1D4ED8" },
+  { id: "notifications",label: "Notifications",   sub: "Broadcast to users",    Icon: Bell,        color: "#FEF3C7",          iconColor: "#B45309" },
+  { id: "team",          label: "Team Members",   sub: "Invite & manage roles", Icon: Shield,      color: "#DCFCE7",          iconColor: "#15803D" },
+  { id: "settings",     label: "Settings",        sub: "App configuration",     Icon: Settings,    color: "#F5F3FF",          iconColor: "#6D28D9" },
+];
+
+function StatCard({ label, value, Icon, color, iconColor }: { label: string; value: string; Icon: any; color: string; iconColor: string }) {
+  return (
+    <View style={statStyles.card}>
+      <View style={[statStyles.icon, { backgroundColor: color }]}>
+        <Icon size={14} color={iconColor} strokeWidth={2} />
+      </View>
+      <Text style={statStyles.value}>{value}</Text>
+      <Text style={statStyles.label}>{label}</Text>
+    </View>
+  );
+}
+
+const statStyles = StyleSheet.create({
+  card: {
+    width: "31%",
+    backgroundColor: "#FFF",
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  icon: { width: 28, height: 28, borderRadius: radius.md, alignItems: "center", justifyContent: "center", marginBottom: 8 },
+  value: { fontSize: 20, fontFamily: fonts.displayBold, color: colors.text, lineHeight: 24 },
+  label: { fontSize: 10, fontFamily: fonts.medium, color: colors.textMuted, marginTop: 3, lineHeight: 14 },
+});
 
 export default function Dashboard() {
   const router = useRouter();
@@ -30,27 +95,35 @@ export default function Dashboard() {
   const [bankRec, setBankRec] = useState<BankRec | null>(null);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [overview, setOverview] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [me, m, c, banks, ready] = await Promise.all([
-        apiGet<any>("/auth/me"),
-        apiGet<DashData>("/match/me"),
-        apiGet<any[]>("/consultations/me").catch(() => []),
-        apiGet<{ recommendations: BankRec[] }>("/banks/recommend/me").catch(() => ({ recommendations: [] })),
-        apiGet<Readiness>("/readiness/me").catch(() => null),
-      ]);
+      const me = await apiGet<any>("/auth/me");
       setUser(me);
-      setData(m);
-      setNext((c || []).find((x: any) => ["new", "confirmed", "called", "follow_up", "interested"].includes(x.status)) || null);
-      setBankRec((banks.recommendations || [])[0] || null);
-      setReadiness(ready);
-      // Evaluate alerts in background
-      apiPost<{ new_alerts: any[] }>("/alerts/evaluate", {}).catch(() => {});
-      const notif = await apiGet<any[]>("/notifications/me").catch(() => []);
-      setAlerts(notif.filter((n: any) => !n.read).slice(0, 3));
+
+      if (me?.role && me.role !== "user") {
+        // Admin: fetch overview data only
+        const ov = await apiGet<Overview>("/admin/overview").catch(() => null);
+        setOverview(ov);
+      } else {
+        // Normal user: fetch full dashboard data
+        const [m, c, banks, ready] = await Promise.all([
+          apiGet<DashData>("/match/me"),
+          apiGet<any[]>("/consultations/me").catch(() => []),
+          apiGet<{ recommendations: BankRec[] }>("/banks/recommend/me").catch(() => ({ recommendations: [] })),
+          apiGet<Readiness>("/readiness/me").catch(() => null),
+        ]);
+        setData(m);
+        setNext((c || []).find((x: any) => ["new", "confirmed", "called", "follow_up", "interested"].includes(x.status)) || null);
+        setBankRec((banks.recommendations || [])[0] || null);
+        setReadiness(ready);
+        apiPost<{ new_alerts: any[] }>("/alerts/evaluate", {}).catch(() => {});
+        const notif = await apiGet<any[]>("/notifications/me").catch(() => []);
+        setAlerts(notif.filter((n: any) => !n.read).slice(0, 3));
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -82,6 +155,88 @@ export default function Dashboard() {
     );
   }
 
+  // ── Admin Console View ──
+  if (isAdmin) {
+    const visibleModules = ALL_MODULES.filter((m) => canAccess(user.role, m.id));
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface2 }} edges={["top"]} testID="admin-home-tab">
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 100 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); load(); }}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.greeting}>{greeting}</Text>
+              <Text style={styles.name} numberOfLines={1}>{user?.full_name || "Admin"}</Text>
+            </View>
+            <TouchableOpacity
+              testID="bell-btn"
+              onPress={() => router.push("/notifications")}
+              style={styles.headerBtn}
+            >
+              <Bell size={18} color={colors.text} strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ paddingHorizontal: spacing.md }}>
+            {/* Role badge */}
+            <View style={{ marginBottom: 14 }}>
+              <View style={adStyles.roleBadge}>
+                <Text style={adStyles.roleBadgeText}>Role: {user.role.replace(/_/g, " ").toUpperCase()}</Text>
+              </View>
+            </View>
+
+            {/* Stats grid */}
+            <Text style={adStyles.sectionLabel}>Overview</Text>
+            <View style={adStyles.statsGrid}>
+              <StatCard label="Total Users"    value={String(overview?.total_users ?? 0)}        Icon={Users}        color={colors.primarySoft} iconColor={colors.primaryDark} />
+              <StatCard label="Daily Active"   value={String(overview?.daily_active_users ?? 0)} Icon={TrendingUp}   color="#DBEAFE"            iconColor="#1D4ED8" />
+              <StatCard label="AI Chats"       value={String(overview?.total_chats ?? 0)}        Icon={MessageSquare} color="#EDE9FE"           iconColor="#5B21B6" />
+              <StatCard label="Consultations"  value={String(overview?.total_consultations ?? 0)} Icon={Phone}       color="#FEF3C7"            iconColor="#92400E" />
+              <StatCard label="Leads"          value={String(overview?.total_leads ?? 0)}        Icon={Target}       color="#FEE2E2"            iconColor="#DC2626" />
+              <StatCard label="Schemes"        value={String(overview?.total_schemes ?? 0)}      Icon={Landmark}     color={colors.surfaceAlt}  iconColor={colors.textMuted} />
+              <StatCard label="Conversion"     value={`${overview?.conversion_rate ?? 0}%`}      Icon={Percent}      color="#F0FDF4"            iconColor="#15803D" />
+              <StatCard label="Scheme Views"   value={String(overview?.scheme_views ?? 0)}       Icon={Eye}          color="#FFF7ED"            iconColor="#C2410C" />
+            </View>
+
+            {/* Modules */}
+            <Text style={[adStyles.sectionLabel, { marginTop: 20 }]}>Modules</Text>
+            <View style={adStyles.modulesGrid}>
+              {visibleModules.map((m) => (
+                <TouchableOpacity
+                  key={m.id}
+                  testID={`admin-nav-${m.id}`}
+                  style={adStyles.moduleTile}
+                  onPress={() => router.push(`/admin/${m.id}` as any)}
+                  activeOpacity={0.85}
+                >
+                  <View style={[adStyles.moduleIcon, { backgroundColor: m.color }]}>
+                    <m.Icon size={20} color={m.iconColor} strokeWidth={2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={adStyles.moduleLabel}>{m.label}</Text>
+                    <Text style={adStyles.moduleSub}>{m.sub}</Text>
+                  </View>
+                  <ChevronRight size={15} color={colors.textDim} strokeWidth={2} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Normal User Home View ──
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface2 }} edges={["top"]} testID="dashboard-screen">
       <ScrollView
@@ -102,25 +257,14 @@ export default function Dashboard() {
             <Text style={styles.greeting}>{greeting}</Text>
             <Text style={styles.name} numberOfLines={1}>{user?.full_name || "Friend"}</Text>
           </View>
-          <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-            {isAdmin && (
-              <TouchableOpacity
-                testID="admin-shortcut"
-                onPress={() => router.push("/admin")}
-                style={[styles.headerBtn, { backgroundColor: colors.primary, borderColor: colors.primary }]}
-              >
-                <Text style={{ fontSize: 13, color: "#FFF", fontFamily: fonts.bold }}>Admin</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              testID="bell-btn"
-              onPress={() => router.push("/notifications")}
-              style={styles.headerBtn}
-            >
-              <Bell size={18} color={colors.text} strokeWidth={2} />
-              {alerts.length > 0 && <View style={styles.badgeDot} />}
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            testID="bell-btn"
+            onPress={() => router.push("/notifications")}
+            style={styles.headerBtn}
+          >
+            <Bell size={18} color={colors.text} strokeWidth={2} />
+            {alerts.length > 0 && <View style={styles.badgeDot} />}
+          </TouchableOpacity>
         </View>
 
         {/* ── Readiness Hero Card ── */}
@@ -204,21 +348,47 @@ export default function Dashboard() {
             </TouchableOpacity>
           )}
 
-          {/* ── Quick Actions ── */}
-          <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
+          {/* ── Top Scheme Match ── */}
+          {data?.matches?.[0] && (
             <TouchableOpacity
-              testID="book-cta"
-              style={[styles.quickAction, { flex: 1.5 }]}
-              onPress={() => router.push("/booking")}
+              testID="scheme-rec-widget"
+              style={[styles.card, styles.bankCard]}
+              onPress={() => router.push("/(tabs)/schemes")}
               activeOpacity={0.85}
             >
-              <Phone size={18} color={colors.primaryDark} strokeWidth={2} />
+              <View style={styles.bankBadge}>
+                <Landmark size={16} color={colors.primaryDark} strokeWidth={2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sectionLabel}>Top Scheme Match</Text>
+                <Text style={styles.bankName}>{data.matches[0].name}</Text>
+                <Text style={styles.bankMeta}>
+                  {formatINR(data.matches[0].funding_estimate)} funding  •  {data.matches[0].score}% match
+                </Text>
+                <Text style={styles.bankWhy} numberOfLines={2}>{data.matches[0].reason}</Text>
+              </View>
+              <ChevronRight size={18} color={colors.textDim} strokeWidth={2} />
+            </TouchableOpacity>
+          )}
+
+          {/* ── Quick Actions ── */}
+          <TouchableOpacity
+            testID="book-cta"
+            style={[styles.quickAction, { flexDirection: "row", alignItems: "center", marginBottom: 10, paddingVertical: 14 }]}
+            onPress={() => router.push("/booking")}
+            activeOpacity={0.85}
+          >
+            <Phone size={20} color={colors.primaryDark} strokeWidth={2} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={styles.qaTitle}>Free Consultation</Text>
               <Text style={styles.qaSub}>30-min advisor call</Text>
-            </TouchableOpacity>
+            </View>
+            <ChevronRight size={16} color={colors.primaryDark} strokeWidth={2} />
+          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
             <TouchableOpacity
               testID="banks-cta"
-              style={styles.quickAction}
+              style={[styles.quickAction, { flex: 1 }]}
               onPress={() => router.push("/banks")}
               activeOpacity={0.85}
             >
@@ -226,7 +396,18 @@ export default function Dashboard() {
               <Text style={styles.qaTitle}>All Banks</Text>
               <Text style={styles.qaSub}>Compare offers</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              testID="schemes-cta"
+              style={[styles.quickAction, { flex: 1 }]}
+              onPress={() => router.push("/(tabs)/schemes")}
+              activeOpacity={0.85}
+            >
+              <Landmark size={18} color={colors.primaryDark} strokeWidth={2} />
+              <Text style={styles.qaTitle}>All Schemes</Text>
+              <Text style={styles.qaSub}>Browse schemes</Text>
+            </TouchableOpacity>
           </View>
+
           {/* ── Document Vault ── */}
           <TouchableOpacity
             style={[styles.quickAction, { flexDirection: "row", alignItems: "center", marginBottom: 10, paddingVertical: 14 }]}
@@ -238,21 +419,6 @@ export default function Dashboard() {
             <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={styles.qaTitle}>Document Vault</Text>
               <Text style={styles.qaSub}>Upload & manage your documents</Text>
-            </View>
-            <ChevronRight size={16} color={colors.primaryDark} strokeWidth={2} />
-          </TouchableOpacity>
-
-          {/* ── My Applications tracker ── */}
-          <TouchableOpacity
-            style={[styles.quickAction, { flexDirection: "row", alignItems: "center", marginBottom: 16, paddingVertical: 14 }]}
-            onPress={() => router.push("/(tabs)/applications")}
-            activeOpacity={0.85}
-            testID="my-applications-cta"
-          >
-            <TrendingUp size={20} color={colors.primaryDark} strokeWidth={2} />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.qaTitle}>My Applications</Text>
-              <Text style={styles.qaSub}>Track your scheme applications</Text>
             </View>
             <ChevronRight size={16} color={colors.primaryDark} strokeWidth={2} />
           </TouchableOpacity>
@@ -296,6 +462,73 @@ export default function Dashboard() {
     </SafeAreaView>
   );
 }
+
+const adStyles = StyleSheet.create({
+  sectionLabel: {
+    fontSize: 11,
+    fontFamily: fonts.bold,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 10,
+  },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 4,
+  },
+  roleBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  roleBadgeText: {
+    fontSize: 11,
+    fontFamily: fonts.bold,
+    color: colors.primaryDark,
+    letterSpacing: 0.4,
+  },
+  modulesGrid: {
+    gap: 8,
+  },
+  moduleTile: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#FFF",
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  moduleIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.xl,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moduleLabel: {
+    fontSize: 15,
+    fontFamily: fonts.displayBold,
+    color: colors.text,
+  },
+  moduleSub: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+});
 
 const styles = StyleSheet.create({
   header: {
@@ -341,7 +574,6 @@ const styles = StyleSheet.create({
     borderColor: "#FFF",
   },
 
-  // Hero card
   heroCard: {
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm2,
@@ -399,7 +631,6 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.75)",
   },
 
-  // Generic card
   card: {
     backgroundColor: "#FFF",
     borderRadius: radius.xl,
@@ -418,63 +649,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  // Action items
-  actionRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    paddingVertical: 10,
-  },
-  actionBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  actionNum: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.primarySoft,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 1,
-  },
-  actionNumText: {
-    fontSize: 11,
-    fontFamily: fonts.bold,
-    color: colors.primaryDark,
-  },
-  actionTitle: {
-    fontSize: 13,
-    fontFamily: fonts.semiBold,
-    color: colors.text,
-    lineHeight: 18,
-  },
-  actionDetail: {
-    fontSize: 12,
-    fontFamily: fonts.regular,
-    color: colors.textMuted,
-    marginTop: 2,
-    lineHeight: 17,
-  },
-  weightPill: {
-    backgroundColor: colors.surfaceAlt,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radius.pill,
-  },
-  weightHigh: {
-    backgroundColor: "#FEF3C7",
-  },
-  weightText: {
-    fontSize: 10,
-    fontFamily: fonts.bold,
-    color: colors.textMuted,
-  },
-  weightTextHigh: {
-    color: "#92400E",
-  },
-
-  // Alerts
   rowBetween: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -520,44 +694,6 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 
-  // AA / Link Bank
-  aaBannerCard: {
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primary + "40",
-  },
-  aaBannerTitle: {
-    fontSize: 14,
-    fontFamily: fonts.semiBold,
-    color: colors.primaryDark,
-  },
-  aaBannerSub: {
-    fontSize: 12,
-    fontFamily: fonts.regular,
-    color: colors.primaryDark,
-    opacity: 0.75,
-    marginTop: 2,
-  },
-  aaIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: radius.lg,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  aaLinkedTitle: {
-    fontSize: 14,
-    fontFamily: fonts.semiBold,
-    color: colors.text,
-  },
-  aaLinkedSub: {
-    fontSize: 12,
-    fontFamily: fonts.regular,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-
-  // Bank card
   bankCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -592,7 +728,6 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 
-  // Quick actions
   quickAction: {
     flex: 1,
     backgroundColor: "#FFF",
@@ -616,7 +751,6 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
 
-  // Consultation
   consultType: {
     fontSize: 16,
     fontFamily: fonts.displayBold,
@@ -643,7 +777,6 @@ const styles = StyleSheet.create({
     textTransform: "capitalize",
   },
 
-  // Scheme cards
   schemeCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -698,5 +831,95 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     color: colors.primaryDark,
     marginTop: -2,
+  },
+
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingVertical: 10,
+  },
+  actionBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  actionNum: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.primarySoft,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  actionNumText: {
+    fontSize: 11,
+    fontFamily: fonts.bold,
+    color: colors.primaryDark,
+  },
+  actionTitle: {
+    fontSize: 13,
+    fontFamily: fonts.semiBold,
+    color: colors.text,
+    lineHeight: 18,
+  },
+  actionDetail: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: colors.textMuted,
+    marginTop: 2,
+    lineHeight: 17,
+  },
+  weightPill: {
+    backgroundColor: colors.surfaceAlt,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  weightHigh: {
+    backgroundColor: "#FEF3C7",
+  },
+  weightText: {
+    fontSize: 10,
+    fontFamily: fonts.bold,
+    color: colors.textMuted,
+  },
+  weightTextHigh: {
+    color: "#92400E",
+  },
+  aaBannerCard: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary + "40",
+  },
+  aaBannerTitle: {
+    fontSize: 14,
+    fontFamily: fonts.semiBold,
+    color: colors.primaryDark,
+  },
+  aaBannerSub: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: colors.primaryDark,
+    opacity: 0.75,
+    marginTop: 2,
+  },
+  aaIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.lg,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  aaLinkedTitle: {
+    fontSize: 14,
+    fontFamily: fonts.semiBold,
+    color: colors.text,
+  },
+  aaLinkedSub: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: colors.textMuted,
+    marginTop: 2,
   },
 });

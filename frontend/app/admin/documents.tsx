@@ -83,27 +83,20 @@ export default function AdminDocuments() {
   };
 
   const handleApprove = async (doc: any) => {
-    Alert.alert(
-      "Verify Document",
-      `Mark "${doc.doc_type}" as verified?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Verify",
-          onPress: async () => {
-            setActioning(doc.id);
-            try {
-              await apiPost(`/admin/documents/${doc.id}/status`, { status: "verified" });
-              await load(filter);
-            } catch (e: any) {
-              Alert.alert("Error", e.message || "Could not verify document");
-            } finally {
-              setActioning(null);
-            }
-          },
-        },
-      ]
-    );
+    const confirmed =
+      typeof window !== "undefined" && typeof (window as any).confirm === "function"
+        ? (window as any).confirm(`Mark "${doc.doc_type}" as verified?`)
+        : true;
+    if (!confirmed) return;
+    setActioning(doc.id);
+    try {
+      await apiPost(`/admin/documents/${doc.id}/status`, { status: "verified" });
+      await load(filter);
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Could not verify document");
+    } finally {
+      setActioning(null);
+    }
   };
 
   const openRejectModal = (doc: any) => {

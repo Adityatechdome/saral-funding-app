@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Search, X, Landmark } from "lucide-react-native";
+import { Search, X, Landmark, ChevronLeft } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR } from "@/src/theme";
 import { apiGet } from "@/src/api";
@@ -52,7 +52,12 @@ export default function Schemes() {
     <SafeAreaView style={{ flex: 1, backgroundColor: "#FFF" }} edges={["top"]} testID="schemes-screen">
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Government Schemes</Text>
+        <View style={styles.titleRow}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <ChevronLeft size={22} color={colors.text} strokeWidth={2} />
+          </TouchableOpacity>
+          <Text style={styles.title}>Government Schemes</Text>
+        </View>
 
         {/* Search */}
         <View style={styles.searchRow}>
@@ -168,11 +173,24 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     backgroundColor: "#FFF",
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 12,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   title: {
+    flex: 1,
     fontSize: 22,
     fontFamily: fonts.displayBold,
     color: colors.text,
-    marginBottom: 12,
   },
   searchRow: {
     marginBottom: 10,

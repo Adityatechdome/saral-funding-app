@@ -133,9 +133,6 @@ export default function Profile() {
   };
 
   const actions = [
-    ...(me?.role && me.role !== "user"
-      ? [{ id: "admin", label: "Admin Console", Icon: Shield, onPress: () => router.push("/admin"), primary: true }]
-      : []),
     { id: "book", label: "Book Consultation", Icon: Phone, onPress: () => router.push("/booking") },
     { id: "notif", label: "Notifications", Icon: Bell, onPress: () => router.push("/notifications") },
     { id: "settings", label: "Settings", Icon: Settings, onPress: () => router.push("/settings") },
@@ -262,26 +259,6 @@ export default function Profile() {
                 <ChevronRight size={16} color={a.primary ? colors.primaryDark : colors.textDim} strokeWidth={2} />
               </TouchableOpacity>
             ))}
-
-            {(!me?.role || me.role === "user") && (
-              <TouchableOpacity
-                testID="bootstrap-admin-btn"
-                style={[styles.actionRow, { borderColor: "#FEF3C7", backgroundColor: "#FFFBEB", opacity: bootstrapping ? 0.6 : 1 }]}
-                onPress={bootstrapAdmin}
-                disabled={bootstrapping}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.actionIcon, { backgroundColor: "#FEF3C7" }]}>
-                  {bootstrapping
-                    ? <ActivityIndicator size="small" color="#92400E" />
-                    : <Shield size={16} color="#92400E" strokeWidth={2} />}
-                </View>
-                <Text style={[styles.actionLabel, { color: "#92400E" }]}>
-                  {bootstrapping ? "Connecting to server…" : "Become Admin (Dev)"}
-                </Text>
-                {!bootstrapping && <ChevronRight size={16} color="#92400E" strokeWidth={2} />}
-              </TouchableOpacity>
-            )}
 
             <TouchableOpacity
               testID="logout-btn"

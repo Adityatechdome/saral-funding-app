@@ -1,8 +1,13 @@
+import { useEffect, useState } from "react";
 import { Tabs } from "expo-router";
 import { View, Text, StyleSheet } from "react-native";
-import { LayoutDashboard, ClipboardList, Sparkles, FolderOpen, CircleUser } from "lucide-react-native";
+import {
+  LayoutDashboard, ClipboardList, Sparkles, FolderOpen, CircleUser,
+  Users, CalendarDays, FileSearch,
+} from "lucide-react-native";
 
 import { colors, fonts } from "@/src/theme";
+import { apiGet } from "@/src/api";
 
 const TAB_ICON_SIZE = 22;
 
@@ -30,6 +35,14 @@ function TabIcon({ label, focused, Icon }: TabIconProps) {
 }
 
 export default function TabsLayout() {
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    apiGet<any>("/auth/me")
+      .then((me) => setIsAdmin(me?.role && me.role !== "user"))
+      .catch(() => {});
+  }, []);
+
   return (
     <Tabs
       screenOptions={{
@@ -50,7 +63,11 @@ export default function TabsLayout() {
         name="applications"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Applications" focused={focused} Icon={ClipboardList} />
+            <TabIcon
+              label={isAdmin ? "User Funnel" : "Applications"}
+              focused={focused}
+              Icon={isAdmin ? Users : ClipboardList}
+            />
           ),
         }}
       />
@@ -66,7 +83,11 @@ export default function TabsLayout() {
         name="advisor"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Advisor" focused={focused} Icon={Sparkles} />
+            <TabIcon
+              label={isAdmin ? "Calendly" : "Advisor"}
+              focused={focused}
+              Icon={isAdmin ? CalendarDays : Sparkles}
+            />
           ),
         }}
       />
@@ -74,7 +95,11 @@ export default function TabsLayout() {
         name="documents"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Documents" focused={focused} Icon={FolderOpen} />
+            <TabIcon
+              label={isAdmin ? "User Docs" : "Documents"}
+              focused={focused}
+              Icon={isAdmin ? FileSearch : FolderOpen}
+            />
           ),
         }}
       />

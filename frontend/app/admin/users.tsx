@@ -165,7 +165,12 @@ export default function AdminUsers() {
           contentContainerStyle={{ padding: spacing.md, paddingBottom: 60 }}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
-            <View style={styles.userCard} testID={`admin-user-${item.id}`}>
+            <TouchableOpacity
+              style={styles.userCard}
+              testID={`admin-user-${item.id}`}
+              onPress={() => router.push(`/admin/user/${item.id}`)}
+              activeOpacity={0.8}
+            >
               {/* Avatar */}
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>
@@ -190,7 +195,7 @@ export default function AdminUsers() {
                   <StepPill step={item.onboarding_step} />
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
           )}
         />
       )}

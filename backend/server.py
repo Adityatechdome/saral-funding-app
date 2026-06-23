@@ -12,7 +12,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / '.env', override=True)
 
 from schemes_seed import SCHEMES_SEED
 from banks_seed import BANKS_SEED
@@ -73,7 +73,7 @@ async def health_check():
     # Check optional services
     twilio_configured = bool(os.environ.get("TWILIO_ACCOUNT_SID"))
     openai_configured = bool(os.environ.get("OPENAI_API_KEY"))
-    azure_configured = bool(os.environ.get("AZURE_STORAGE_CONNECTION_STRING"))
+    azure_configured = bool(os.environ.get("AZURE_ACCOUNT_NAME") and os.environ.get("AZURE_SAS_TOKEN"))
     ghl_configured = bool(os.environ.get("GHL_API_KEY"))
     setu_configured = bool(os.environ.get("SETU_CLIENT_ID"))
 
@@ -946,6 +946,81 @@ async def admin_enable_scheme(sid: str, admin=Depends(require_admin)):
 async def admin_delete_scheme(sid: str, admin=Depends(require_super_admin)):
     await db.schemes.delete_one({"id": sid})
     return {"ok": True}
+
+
+@api_router.get("/admin/schemes/{sid}/assigned-users")
+async def admin_scheme_assigned_users(sid: str, admin=Depends(require_admin)):
+    """List all users assigned to a specific scheme."""
+    apps = await db.scheme_applications.find({"scheme_id": sid}, {"_id": 0}).to_list(500)
+    if not apps:
+        return {"scheme_id": sid, "total": 0, "users": []}
+    user_ids = [a["user_id"] for a in apps]
+    users = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "full_name": 1, "mobile": 1, "state": 1}).to_list(500)
+    by_id = {u["id"]: u for u in users}
+    result = []
+    for app in apps:
+        result.append({
+            "application_id": app["id"],
+            "user_id": app["user_id"],
+            "user": by_id.get(app["user_id"], {}),
+            "stage": app["stage"],
+            "assigned_at": app.get("assigned_at"),
+            "notes": app.get("notes", ""),
+        })
+    return {"scheme_id": sid, "total": len(result), "users": result}
+
+
+class BulkAssignRequest(BaseModel):
+    mode: str  # "all" or "selected"
+    user_ids: Optional[List[str]] = None
+    notes: Optional[str] = None
+
+
+@api_router.post("/admin/schemes/{sid}/assign")
+async def admin_bulk_assign_scheme(sid: str, req: BulkAssignRequest, admin=Depends(require_admin)):
+    """Bulk assign a scheme to all users or selected users."""
+    scheme = await db.schemes.find_one({"id": sid}, {"_id": 0})
+    if not scheme:
+        raise HTTPException(status_code=404, detail="Scheme not found.")
+    if req.mode not in ("all", "selected"):
+        raise HTTPException(status_code=400, detail="mode must be 'all' or 'selected'")
+
+    if req.mode == "all":
+        users = await db.users.find({"role": "user"}, {"_id": 0, "id": 1}).to_list(5000)
+        target_ids = [u["id"] for u in users]
+    else:
+        if not req.user_ids:
+            raise HTTPException(status_code=400, detail="user_ids required for selected mode")
+        target_ids = req.user_ids
+
+    existing = await db.scheme_applications.find(
+        {"scheme_id": sid, "user_id": {"$in": target_ids}}, {"_id": 0, "user_id": 1}
+    ).to_list(5000)
+    already_assigned = {e["user_id"] for e in existing}
+    new_ids = [uid for uid in target_ids if uid not in already_assigned]
+
+    now = now_iso()
+    docs = []
+    for uid in new_ids:
+        docs.append({
+            "id": str(uuid.uuid4()),
+            "user_id": uid,
+            "scheme_id": sid,
+            "scheme_name": scheme["name"],
+            "bank_id": None,
+            "bank_name": None,
+            "stage": "scheme_identified",
+            "stage_history": [{"stage": "scheme_identified", "note": req.notes or "Bulk assigned by admin", "updated_by": admin.get("full_name", "Admin"), "updated_at": now}],
+            "assigned_by": admin["id"],
+            "assigned_at": now,
+            "notes": req.notes or "",
+            "created_at": now,
+            "updated_at": now,
+        })
+    if docs:
+        await db.scheme_applications.insert_many([{**d, "_id": d["id"]} for d in docs])
+
+    return {"assigned": len(docs), "skipped": len(already_assigned), "total_targeted": len(target_ids)}
 
 
 @api_router.get("/admin/consultations")

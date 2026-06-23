@@ -105,8 +105,9 @@ async def delete_from_azure(blob_name: str) -> bool:
 
 def get_sas_url(blob_name: str, expiry_hours: int = 1) -> str:
     if not AZURE_ENABLED:
-        # Return local file URL for dev
+        # Return full backend URL so frontend can open it directly
+        backend_base = os.environ.get("APP_BASE_URL", "http://localhost:8000")
         local_path = LOCAL_UPLOAD_DIR / blob_name.replace("/", "_")
-        return f"/uploads/{local_path.name}"
+        return f"{backend_base}/uploads/{local_path.name}"
     token = AZURE_SAS_TOKEN.lstrip("?")
     return f"https://{AZURE_ACCOUNT_NAME}.blob.core.windows.net/{AZURE_CONTAINER}/{blob_name}?{token}"

@@ -1,3 +1,4 @@
+import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { ChevronLeft } from "lucide-react-native";
 import { colors, spacing, fonts, radius } from "@/src/theme";
@@ -30,7 +31,7 @@ export default function StepBar({ step, total, labels }: StepBarProps) {
   );
 }
 
-export function BackBar({ title, onBack }: { title: string; onBack?: () => void }) {
+export function BackBar({ title, onBack, right }: { title: string; onBack?: () => void; right?: React.ReactNode }) {
   return (
     <View style={barStyles.bar}>
       {onBack ? (
@@ -50,7 +51,7 @@ export function BackBar({ title, onBack }: { title: string; onBack?: () => void 
       ) : (
         <View style={{ flex: 1 }} />
       )}
-      <View style={{ width: 40 }} />
+      {right ? <View style={{ minWidth: 40, alignItems: "flex-end" }}>{right}</View> : <View style={{ width: 40 }} />}
     </View>
   );
 }
