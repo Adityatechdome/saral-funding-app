@@ -124,6 +124,7 @@ export default function LeadDetail() {
 
   // Scheme Applications
   const [schemeApps, setSchemeApps] = useState<any[]>([]);
+  const [bankAssignments, setBankAssignments] = useState<any[]>([]);
   const [allSchemes, setAllSchemes] = useState<any[]>([]);
   const [allBanks, setAllBanks] = useState<any[]>([]);
   const [assignModal, setAssignModal] = useState(false);
@@ -145,14 +146,16 @@ export default function LeadDetail() {
       // Load docs and existing recommendation in parallel
       const userId = d.user?.id || d.user_id;
       if (userId) {
-        const [docs, apps, schemes, banks] = await Promise.all([
+        const [docs, apps, bankApps, schemes, banks] = await Promise.all([
           apiGet<any[]>(`/admin/users/${userId}/documents`).catch(() => []),
           apiGet<any[]>(`/admin/users/${userId}/scheme-applications`).catch(() => []),
+          apiGet<any[]>(`/admin/users/${userId}/bank-assignments`).catch(() => []),
           apiGet<any[]>("/schemes").catch(() => []),
           apiGet<any[]>("/banks").catch(() => []),
         ]);
         setUserDocs(Array.isArray(docs) ? docs : []);
         setSchemeApps(Array.isArray(apps) ? apps : []);
+        setBankAssignments(Array.isArray(bankApps) ? bankApps : []);
         setAllSchemes(Array.isArray(schemes) ? schemes : []);
         setAllBanks(Array.isArray(banks) ? banks : []);
       }
@@ -485,6 +488,30 @@ export default function LeadDetail() {
             <Plus size={14} color="#fff" strokeWidth={2.5} />
             <Text style={styles.assignBtnText}>Assign Scheme</Text>
           </TouchableOpacity>
+        </SectionCard>
+
+        {/* Bank Assignments */}
+        <SectionCard title={`Assigned Banks (${bankAssignments.length})`}>
+          {bankAssignments.length === 0 ? (
+            <Text style={styles.emptyNote}>No banks assigned yet. Go to Banks module to assign.</Text>
+          ) : (
+            bankAssignments.map((ba: any) => (
+              <View key={ba.id} style={styles.appRow}>
+                <View style={{ width: 28, height: 28, borderRadius: radius.md, backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Building2 size={14} color="#1D4ED8" strokeWidth={2} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.appSchemeName}>{ba.bank_name}</Text>
+                  {ba.bank_short_name ? (
+                    <Text style={styles.appBankName}>{ba.bank_short_name}</Text>
+                  ) : null}
+                </View>
+                <View style={[styles.appStagePill, { backgroundColor: "#DBEAFE" }]}>
+                  <Text style={[styles.appStageText, { color: "#1D4ED8" }]}>Assigned</Text>
+                </View>
+              </View>
+            ))
+          )}
         </SectionCard>
 
         {/* Notes + Follow-up */}

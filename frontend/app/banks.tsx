@@ -46,9 +46,17 @@ export default function BanksScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      apiGet<{ recommendations: Rec[] }>("/banks/recommend/me")
-        .then((d) => { setRecs(d.recommendations || []); setLoading(false); })
-        .catch(() => setLoading(false));
+      Promise.all([
+        apiGet<{ recommendations: Rec[] }>("/banks/recommend/me").catch(() => ({ recommendations: [] })),
+        apiGet<any[]>("/my/bank-assignments").catch(() => []),
+      ]).then(([d, myBanks]) => {
+        const assignedIds = new Set((myBanks || []).map((b: any) => b.bank_id));
+        const filtered = assignedIds.size > 0
+          ? (d.recommendations || []).filter((r) => assignedIds.has(r.bank_id))
+          : [];
+        setRecs(filtered);
+        setLoading(false);
+      }).catch(() => setLoading(false));
     }, [])
   );
 
@@ -80,6 +88,16 @@ export default function BanksScreen() {
           <Text style={styles.compareCount}>{selected.length} selected</Text>
         )}
       </View>
+
+      {recs.length === 0 && (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 10, marginTop: -60 }}>
+          <Building2 size={40} color={colors.textDim} strokeWidth={1.5} />
+          <Text style={{ fontSize: 16, fontFamily: fonts.displayBold, color: colors.text }}>No banks assigned</Text>
+          <Text style={{ fontSize: 13, fontFamily: fonts.regular, color: colors.textMuted, textAlign: "center", paddingHorizontal: 32 }}>
+            Your advisor will assign relevant banks after your consultation.
+          </Text>
+        </View>
+      )}
 
       <FlatList
         data={recs}

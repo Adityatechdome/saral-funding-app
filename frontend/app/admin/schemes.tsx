@@ -25,7 +25,7 @@ export default function AdminSchemes() {
   const [form, setForm] = useState({
     name: "", full_name: "", description: "",
     max_funding: "", max_subsidy_percent: "", process: "",
-    eligibility: "", benefits: "", categories: "", states: "All India",
+    eligibility: "", benefits: "", documents: "", categories: "", states: "All India",
   });
 
   const load = async () => {
@@ -71,11 +71,12 @@ export default function AdminSchemes() {
         process: form.process.trim(),
         eligibility: form.eligibility.split("\n").map((s) => s.trim()).filter(Boolean),
         benefits: form.benefits.split("\n").map((s) => s.trim()).filter(Boolean),
+        documents: form.documents.split("\n").map((s) => s.trim()).filter(Boolean),
         categories: form.categories.split(",").map((s) => s.trim()).filter(Boolean),
         states: form.states.split(",").map((s) => s.trim()).filter(Boolean),
       });
       setShowCreate(false);
-      setForm({ name: "", full_name: "", description: "", max_funding: "", max_subsidy_percent: "", process: "", eligibility: "", benefits: "", categories: "", states: "All India" });
+      setForm({ name: "", full_name: "", description: "", max_funding: "", max_subsidy_percent: "", process: "", eligibility: "", benefits: "", documents: "", categories: "", states: "All India" });
       await load();
     } catch (e: any) {
       Alert.alert("Error", e.message || "Could not create scheme.");
@@ -178,6 +179,7 @@ export default function AdminSchemes() {
                 <Field label="Max Subsidy %" placeholder="e.g. 35" value={form.max_subsidy_percent} onChangeText={(v) => setForm((f) => ({ ...f, max_subsidy_percent: v }))} keyboardType="numeric" />
                 <Field label="Eligibility (one per line)" placeholder="Must be an Indian citizen&#10;Age 18-45..." value={form.eligibility} onChangeText={(v) => setForm((f) => ({ ...f, eligibility: v }))} multiline />
                 <Field label="Benefits (one per line)" placeholder="Up to 35% subsidy&#10;Collateral free..." value={form.benefits} onChangeText={(v) => setForm((f) => ({ ...f, benefits: v }))} multiline />
+                <Field label="Documents Required (one per line)" placeholder="Aadhaar Card&#10;PAN Card&#10;Bank Statement (6 months)..." value={form.documents} onChangeText={(v) => setForm((f) => ({ ...f, documents: v }))} multiline />
                 <Field label="Process" placeholder="Application process description..." value={form.process} onChangeText={(v) => setForm((f) => ({ ...f, process: v }))} multiline />
                 <Field label="Categories (comma separated)" placeholder="MSME, Manufacturing, Startup" value={form.categories} onChangeText={(v) => setForm((f) => ({ ...f, categories: v }))} />
                 <Field label="States (comma separated)" placeholder="All India" value={form.states} onChangeText={(v) => setForm((f) => ({ ...f, states: v }))} />

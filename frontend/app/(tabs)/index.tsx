@@ -13,6 +13,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import {
   Bell, ChevronRight, Phone, Building2, TrendingUp, AlertCircle, Calendar, Zap, FolderOpen, Landmark,
   Users, Target, BarChart2, FolderOpen as FolderIcon, Settings, Shield, Percent, Eye, MessageSquare,
+  Banknote,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR, elevation } from "@/src/theme";
@@ -50,6 +51,7 @@ const ALL_MODULES = [
   { id: "consultations", label: "Consultations",  sub: "Track & update",        Icon: Phone,       color: "#EDE9FE",          iconColor: "#5B21B6" },
   { id: "leads",         label: "CRM / Leads",    sub: "Pipeline & stages",     Icon: Target,      color: "#FEF3C7",          iconColor: "#92400E" },
   { id: "schemes",       label: "Schemes",         sub: "Enable & disable",      Icon: Landmark,    color: "#FFF7ED",          iconColor: "#C2410C" },
+  { id: "banks",         label: "Banks",            sub: "Assign & manage banks", Icon: Banknote,    color: "#EFF6FF",          iconColor: "#1D4ED8" },
   { id: "documents",    label: "Documents",       sub: "Review & approve docs", Icon: FolderIcon,  color: "#F0FDF4",          iconColor: "#15803D" },
   { id: "analytics",    label: "Analytics",       sub: "Charts & trends",       Icon: BarChart2,   color: "#DBEAFE",          iconColor: "#1D4ED8" },
   { id: "notifications",label: "Notifications",   sub: "Broadcast to users",    Icon: Bell,        color: "#FEF3C7",          iconColor: "#B45309" },
@@ -97,6 +99,8 @@ export default function Dashboard() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [alerts, setAlerts] = useState<any[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [hasAssignedSchemes, setHasAssignedSchemes] = useState(false);
+  const [hasAssignedBanks, setHasAssignedBanks] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -111,15 +115,31 @@ export default function Dashboard() {
         setOverview(ov);
       } else {
         // Normal user: fetch full dashboard data
-        const [m, c, banks, ready] = await Promise.all([
+        const [m, c, banks, ready, mySchemes, myBanks] = await Promise.all([
           apiGet<DashData>("/match/me"),
           apiGet<any[]>("/consultations/me").catch(() => []),
           apiGet<{ recommendations: BankRec[] }>("/banks/recommend/me").catch(() => ({ recommendations: [] })),
           apiGet<Readiness>("/readiness/me").catch(() => null),
+          apiGet<any[]>("/my/scheme-applications").catch(() => []),
+          apiGet<any[]>("/my/bank-assignments").catch(() => []),
         ]);
-        setData(m);
+
+        // Only keep matches for schemes/banks actually assigned to this user
+        const assignedSchemeIds = new Set((mySchemes || []).map((s: any) => s.scheme_id));
+        const assignedBankIds   = new Set((myBanks  || []).map((b: any) => b.bank_id));
+
+        const filteredMatches = assignedSchemeIds.size > 0
+          ? (m?.matches || []).filter((match: any) => assignedSchemeIds.has(match.scheme_id))
+          : [];
+        const filteredBankRec = assignedBankIds.size > 0
+          ? ((banks.recommendations || []).find((r: BankRec) => assignedBankIds.has(r.bank_id)) ?? null)
+          : null;
+
+        setHasAssignedSchemes(assignedSchemeIds.size > 0);
+        setHasAssignedBanks(assignedBankIds.size > 0);
+        setData({ ...m, matches: filteredMatches });
         setNext((c || []).find((x: any) => ["new", "confirmed", "called", "follow_up", "interested"].includes(x.status)) || null);
-        setBankRec((banks.recommendations || [])[0] || null);
+        setBankRec(filteredBankRec);
         setReadiness(ready);
         apiPost<{ new_alerts: any[] }>("/alerts/evaluate", {}).catch(() => {});
         const notif = await apiGet<any[]>("/notifications/me").catch(() => []);
@@ -367,7 +387,9 @@ export default function Dashboard() {
             </View>
             <ChevronRight size={16} color="#FFF" strokeWidth={2} />
           </TouchableOpacity>
+          {(hasAssignedBanks || hasAssignedSchemes) && (
           <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
+            {hasAssignedBanks && (
             <TouchableOpacity
               testID="banks-cta"
               style={[styles.quickAction, { flex: 1 }]}
@@ -378,6 +400,8 @@ export default function Dashboard() {
               <Text style={styles.qaTitle}>All Banks</Text>
               <Text style={styles.qaSub}>Compare offers</Text>
             </TouchableOpacity>
+            )}
+            {hasAssignedSchemes && (
             <TouchableOpacity
               testID="schemes-cta"
               style={[styles.quickAction, { flex: 1 }]}
@@ -388,7 +412,9 @@ export default function Dashboard() {
               <Text style={styles.qaTitle}>All Schemes</Text>
               <Text style={styles.qaSub}>Browse schemes</Text>
             </TouchableOpacity>
+            )}
           </View>
+          )}
 
           {/* ── Document Vault ── */}
           <TouchableOpacity

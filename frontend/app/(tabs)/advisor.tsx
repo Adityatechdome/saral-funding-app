@@ -21,7 +21,7 @@ import Animated, {
 import {
   ArrowUp, Trash2, ChevronRight,
   FileText, Route, CheckCircle2, Sparkles, Building2, Landmark,
-  MessageSquare, Target, CalendarDays,
+  MessageSquare, Target,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR } from "@/src/theme";
@@ -29,6 +29,7 @@ import { apiGet, apiPost, apiDelete } from "@/src/api";
 import { getLang } from "@/src/i18n";
 import { useRouter } from "expo-router";
 import Saathi from "@/src/components/Saathi";
+import AdminConsultations from "../admin/consultations";
 
 type Msg = { role: "user" | "assistant"; content: string; structured?: any; ts?: number; followUps?: string[] };
 
@@ -545,52 +546,6 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { backgroundColor: colors.primaryLight, opacity: 0.5 },
 });
 
-// ── Admin Calendly View ──
-function AdminCalendly() {
-  return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface2 }} edges={["top"]}>
-      <View style={calStyles.header}>
-        <Text style={calStyles.title}>Calendly</Text>
-      </View>
-      <View style={calStyles.emptyBox}>
-        <CalendarDays size={52} color={colors.textDim} strokeWidth={1.5} />
-        <Text style={calStyles.emptyTitle}>No Calendly Configured</Text>
-        <Text style={calStyles.emptySub}>
-          Connect your Calendly account in Settings to manage bookings and consultation schedules here.
-        </Text>
-      </View>
-    </SafeAreaView>
-  );
-}
-
-const calStyles = StyleSheet.create({
-  header: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: "#FFF",
-  },
-  title: { fontSize: 22, fontFamily: fonts.displayBold, color: colors.text },
-  emptyBox: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: spacing.lg,
-    gap: 12,
-    marginTop: -60,
-  },
-  emptyTitle: { fontSize: 18, fontFamily: fonts.displayBold, color: colors.text },
-  emptySub: {
-    fontSize: 13,
-    fontFamily: fonts.regular,
-    color: colors.textMuted,
-    textAlign: "center",
-    lineHeight: 20,
-  },
-});
-
 export default function Advisor() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
 
@@ -601,6 +556,6 @@ export default function Advisor() {
   }, []);
 
   if (isAdmin === null) return null;
-  if (isAdmin) return <AdminCalendly />;
+  if (isAdmin) return <AdminConsultations />;
   return <AdvisorChat />;
 }

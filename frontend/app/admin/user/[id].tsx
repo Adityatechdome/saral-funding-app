@@ -7,7 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   User, MapPin, Phone, Landmark, ChevronRight,
-  CheckCircle2, Clock, XCircle, Plus, Trash2,
+  CheckCircle2, Clock, XCircle, Plus, Trash2, Building2,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR } from "@/src/theme";
@@ -55,16 +55,22 @@ export default function UserDetail() {
   const [assigning, setAssigning] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  // Bank assignments
+  const [bankAssignments, setBankAssignments] = useState<any[]>([]);
+  const [deletingBank, setDeletingBank] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [userRes, appsRes] = await Promise.all([
+      const [userRes, appsRes, banksRes] = await Promise.all([
         apiGet<any>(`/admin/users/${id}`),
         apiGet<any[]>(`/admin/users/${id}/scheme-applications`),
+        apiGet<any[]>(`/admin/users/${id}/bank-assignments`).catch(() => []),
       ]);
       setUser(userRes.user ?? userRes);
       setBusiness(userRes.business_profile ?? null);
       setApplications(Array.isArray(appsRes) ? appsRes : []);
+      setBankAssignments(Array.isArray(banksRes) ? banksRes : []);
     } finally {
       setLoading(false);
     }
@@ -115,6 +121,23 @@ export default function UserDetail() {
       Alert.alert("Error", "Could not remove assignment.");
     } finally {
       setDeleting(null);
+    }
+  };
+
+  const handleDeleteBank = async (assignmentId: string) => {
+    const confirmed =
+      typeof window !== "undefined" && typeof (window as any).confirm === "function"
+        ? (window as any).confirm("Remove this bank assignment?")
+        : true;
+    if (!confirmed) return;
+    setDeletingBank(assignmentId);
+    try {
+      await apiDelete(`/admin/bank-assignments/${assignmentId}`);
+      await load();
+    } catch {
+      Alert.alert("Error", "Could not remove bank assignment.");
+    } finally {
+      setDeletingBank(null);
     }
   };
 
@@ -211,6 +234,49 @@ export default function UserDetail() {
                 disabled={deleting === app.id}
               >
                 {deleting === app.id
+                  ? <ActivityIndicator size="small" color="#DC2626" />
+                  : <Trash2 size={14} color="#DC2626" strokeWidth={2} />}
+              </TouchableOpacity>
+              <ChevronRight size={14} color={colors.textDim} strokeWidth={2} />
+            </TouchableOpacity>
+          ))
+        )}
+        {/* Assigned Banks */}
+        <View style={[s.sectionHeader, { marginTop: 8 }]}>
+          <Building2 size={14} color={colors.textMuted} strokeWidth={2} />
+          <Text style={s.sectionTitle}>Assigned Banks ({bankAssignments.length})</Text>
+          <TouchableOpacity style={[s.addBtn, { backgroundColor: "#DBEAFE" }]} onPress={() => router.push("/admin/banks" as any)} activeOpacity={0.8}>
+            <Plus size={13} color="#1D4ED8" strokeWidth={2.5} />
+            <Text style={[s.addBtnText, { color: "#1D4ED8" }]}>Assign</Text>
+          </TouchableOpacity>
+        </View>
+
+        {bankAssignments.length === 0 ? (
+          <View style={s.emptyBox}>
+            <Building2 size={28} color={colors.textDim} strokeWidth={1.5} />
+            <Text style={s.emptyText}>No banks assigned yet</Text>
+          </View>
+        ) : (
+          bankAssignments.map((ba) => (
+            <TouchableOpacity
+              key={ba.id}
+              style={s.appCard}
+              onPress={() => router.push(`/admin/bank/${ba.bank_id}` as any)}
+              activeOpacity={0.8}
+            >
+              <View style={[s.schemeIcon, { backgroundColor: "#EFF6FF" }]}>
+                <Building2 size={14} color="#1D4ED8" strokeWidth={2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.schemeName}>{ba.bank_name}</Text>
+                {ba.bank_short_name && <Text style={s.bankName}>{ba.bank_short_name}</Text>}
+              </View>
+              <TouchableOpacity
+                style={s.deleteBtn}
+                onPress={() => handleDeleteBank(ba.id)}
+                disabled={deletingBank === ba.id}
+              >
+                {deletingBank === ba.id
                   ? <ActivityIndicator size="small" color="#DC2626" />
                   : <Trash2 size={14} color="#DC2626" strokeWidth={2} />}
               </TouchableOpacity>

@@ -20,6 +20,7 @@ import EmptyState from "@/src/components/EmptyState";
 
 export default function Schemes() {
   const router = useRouter();
+  const [allAssigned, setAllAssigned] = useState<any[]>([]); // full assigned scheme list
   const [items, setItems] = useState<any[]>([]);
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
@@ -34,19 +35,43 @@ export default function Schemes() {
     debounceRef.current = setTimeout(() => setDebouncedQ(text), 320);
   }, []);
 
+  // Initial load: fetch assigned scheme IDs + all schemes, filter to assigned only
   const load = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (cat && cat !== "All") params.set("category", cat);
-    if (debouncedQ) params.set("q", debouncedQ);
-    const data = await apiGet<any[]>(`/schemes?${params.toString()}`);
-    setItems(data);
-    setLoading(false);
-  }, [cat, debouncedQ]);
+    try {
+      const [myApps, allSchemes] = await Promise.all([
+        apiGet<any[]>("/my/scheme-applications").catch(() => []),
+        apiGet<any[]>("/schemes"),
+      ]);
+      const assignedIds = new Set((myApps || []).map((a: any) => a.scheme_id));
+      const assigned = assignedIds.size > 0
+        ? (allSchemes || []).filter((s: any) => assignedIds.has(s.id))
+        : [];
+      setAllAssigned(assigned);
+      setItems(assigned);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
+  // Client-side filter when search/category changes
   useEffect(() => {
-    load();
-  }, [load]);
+    let filtered = allAssigned;
+    if (cat && cat !== "All") {
+      filtered = filtered.filter((s) =>
+        (s.categories || []).some((c: string) => c.toLowerCase().includes(cat.toLowerCase()))
+      );
+    }
+    if (debouncedQ) {
+      const lq = debouncedQ.toLowerCase();
+      filtered = filtered.filter((s) =>
+        (s.name || "").toLowerCase().includes(lq) || (s.description || "").toLowerCase().includes(lq)
+      );
+    }
+    setItems(filtered);
+  }, [cat, debouncedQ, allAssigned]);
+
+  useEffect(() => { load(); }, []);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#FFF" }} edges={["top"]} testID="schemes-screen">
@@ -107,10 +132,10 @@ export default function Schemes() {
       ) : items.length === 0 ? (
         <EmptyState
           Icon={Landmark}
-          title="No schemes found"
-          subtitle={debouncedQ ? `No results for "${debouncedQ}"` : "Try a different category"}
-          ctaLabel="Clear filters"
-          onCta={() => { onSearch(""); setCat("All"); }}
+          title="No schemes assigned"
+          subtitle={debouncedQ || cat !== "All" ? "Try clearing your filters" : "Your advisor will assign schemes after your consultation."}
+          ctaLabel={debouncedQ || cat !== "All" ? "Clear filters" : undefined}
+          onCta={debouncedQ || cat !== "All" ? () => { onSearch(""); setCat("All"); } : undefined}
         />
       ) : (
         <FlatList

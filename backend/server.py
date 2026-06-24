@@ -572,7 +572,54 @@ async def recompute(user=Depends(get_current_user)):
 # ===========================================================================
 @api_router.get("/banks")
 async def list_banks():
-    return await db.banks.find({}, {"_id": 0}).to_list(50)
+    return await db.banks.find({}, {"_id": 0}).to_list(200)
+
+
+class CreateBankRequest(BaseModel):
+    name: str
+    short_name: Optional[str] = ""
+    type: Optional[str] = "Public"
+    interest_min: Optional[float] = 0.0
+    interest_max: Optional[float] = 0.0
+    max_funding: Optional[int] = 0
+    processing_fee_percent: Optional[float] = 0.0
+    min_credit_score: Optional[int] = 0
+    collateral_required: Optional[bool] = False
+    description: Optional[str] = ""
+    why: Optional[str] = ""
+    supports: Optional[List[str]] = []
+    industries: Optional[List[str]] = []
+    states: Optional[List[str]] = ["All India"]
+    min_turnover: Optional[int] = 0
+
+
+@api_router.post("/admin/banks")
+async def admin_create_bank(req: CreateBankRequest, admin=Depends(require_admin)):
+    """Super admin creates a new bank."""
+    if admin.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Only super_admin can create banks.")
+    bank_id = req.name.lower().replace(" ", "-").replace(".", "") + "-" + str(uuid.uuid4())[:6]
+    doc = {
+        "id": bank_id,
+        "name": req.name.strip(),
+        "short_name": req.short_name or req.name.strip(),
+        "type": req.type or "Public",
+        "interest_min": req.interest_min or 0.0,
+        "interest_max": req.interest_max or 0.0,
+        "max_funding": req.max_funding or 0,
+        "processing_fee_percent": req.processing_fee_percent or 0.0,
+        "min_credit_score": req.min_credit_score or 0,
+        "collateral_required": req.collateral_required or False,
+        "description": req.description or "",
+        "why": req.why or "",
+        "supports": req.supports or [],
+        "industries": req.industries or [],
+        "states": req.states or ["All India"],
+        "min_turnover": req.min_turnover or 0,
+        "created_at": now_iso(),
+    }
+    await db.banks.insert_one(doc)
+    return {k: v for k, v in doc.items() if k != "_id"}
 
 
 @api_router.get("/banks/{bank_id}")
@@ -1360,6 +1407,95 @@ async def admin_delete_application(app_id: str, admin=Depends(require_admin)):
     return {"ok": True}
 
 
+# ===========================================================================
+# BANK ASSIGNMENTS  (admin assigns banks to users)
+# ===========================================================================
+
+class BankAssignRequest(BaseModel):
+    mode: str  # "all" or "selected"
+    user_ids: Optional[List[str]] = None
+    notes: Optional[str] = None
+
+
+@api_router.get("/admin/banks/{bid}/assigned-users")
+async def admin_bank_assigned_users(bid: str, admin=Depends(require_admin)):
+    """List all users assigned to a specific bank."""
+    assignments = await db.bank_assignments.find({"bank_id": bid}, {"_id": 0}).to_list(500)
+    if not assignments:
+        return {"bank_id": bid, "total": 0, "users": []}
+    user_ids = [a["user_id"] for a in assignments]
+    users = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "full_name": 1, "mobile": 1, "state": 1}).to_list(500)
+    by_id = {u["id"]: u for u in users}
+    result = []
+    for a in assignments:
+        result.append({
+            "assignment_id": a["id"],
+            "user_id": a["user_id"],
+            "user": by_id.get(a["user_id"], {}),
+            "assigned_at": a.get("assigned_at"),
+            "notes": a.get("notes", ""),
+        })
+    return {"bank_id": bid, "total": len(result), "users": result}
+
+
+@api_router.post("/admin/banks/{bid}/assign")
+async def admin_bulk_assign_bank(bid: str, req: BankAssignRequest, admin=Depends(require_admin)):
+    """Bulk assign a bank to all users or selected users."""
+    bank = await db.banks.find_one({"id": bid}, {"_id": 0})
+    if not bank:
+        raise HTTPException(status_code=404, detail="Bank not found.")
+    if req.mode not in ("all", "selected"):
+        raise HTTPException(status_code=400, detail="mode must be 'all' or 'selected'")
+
+    if req.mode == "all":
+        users = await db.users.find({"role": "user"}, {"_id": 0, "id": 1}).to_list(5000)
+        target_ids = [u["id"] for u in users]
+    else:
+        if not req.user_ids:
+            raise HTTPException(status_code=400, detail="user_ids required for selected mode")
+        target_ids = req.user_ids
+
+    existing = await db.bank_assignments.find(
+        {"bank_id": bid, "user_id": {"$in": target_ids}}, {"_id": 0, "user_id": 1}
+    ).to_list(5000)
+    already_assigned = {e["user_id"] for e in existing}
+    new_ids = [uid for uid in target_ids if uid not in already_assigned]
+
+    now = now_iso()
+    docs = []
+    for uid in new_ids:
+        docs.append({
+            "id": str(uuid.uuid4()),
+            "user_id": uid,
+            "bank_id": bid,
+            "bank_name": bank["name"],
+            "bank_short_name": bank.get("short_name", ""),
+            "assigned_by": admin["id"],
+            "assigned_at": now,
+            "notes": req.notes or "",
+            "created_at": now,
+        })
+    if docs:
+        await db.bank_assignments.insert_many(docs)
+    return {"assigned": len(docs), "skipped": len(already_assigned)}
+
+
+@api_router.get("/admin/users/{uid}/bank-assignments")
+async def admin_list_user_bank_assignments(uid: str, admin=Depends(require_admin)):
+    """List banks assigned to a user."""
+    assignments = await db.bank_assignments.find({"user_id": uid}, {"_id": 0}).to_list(100)
+    return assignments
+
+
+@api_router.delete("/admin/bank-assignments/{assignment_id}")
+async def admin_delete_bank_assignment(assignment_id: str, admin=Depends(require_admin)):
+    """Admin removes a bank assignment."""
+    result = await db.bank_assignments.delete_one({"id": assignment_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Assignment not found.")
+    return {"ok": True}
+
+
 @api_router.get("/my/scheme-applications")
 async def my_scheme_applications(user=Depends(get_current_user)):
     """User fetches all their scheme application trackers."""
@@ -1375,6 +1511,15 @@ async def my_scheme_applications(user=Depends(get_current_user)):
             app["stage_index"] = 0
         app["total_stages"] = len(APPLICATION_STAGES) - 1  # exclude rejected
     return apps
+
+
+@api_router.get("/my/bank-assignments")
+async def my_bank_assignments(user=Depends(get_current_user)):
+    """User fetches all banks assigned to them by admin."""
+    assignments = await db.bank_assignments.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("created_at", 1).to_list(100)
+    return assignments
 
 
 # ===========================================================================
