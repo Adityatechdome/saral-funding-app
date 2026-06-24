@@ -364,22 +364,6 @@ export default function LeadDetail() {
           </SectionCard>
         )}
 
-        {/* Recommended Schemes */}
-        {schemeMatches.length > 0 && (
-          <SectionCard title={`Recommended Schemes (${schemeMatches.length})`}>
-            {schemeMatches.slice(0, 5).map((s: any) => (
-              <View key={s.scheme_id} style={styles.schemeRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.schemeName}>{s.name}</Text>
-                  {s.reason && <Text style={styles.schemeReason} numberOfLines={2}>{s.reason}</Text>}
-                </View>
-                <View style={styles.scoreChip}>
-                  <Text style={styles.scoreText}>{s.score}%</Text>
-                </View>
-              </View>
-            ))}
-          </SectionCard>
-        )}
 
         {/* Uploaded Documents */}
         <SectionCard title={`Uploaded Documents (${userDocs.length})`}>

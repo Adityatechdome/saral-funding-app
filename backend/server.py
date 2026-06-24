@@ -1515,10 +1515,17 @@ async def my_scheme_applications(user=Depends(get_current_user)):
 
 @api_router.get("/my/bank-assignments")
 async def my_bank_assignments(user=Depends(get_current_user)):
-    """User fetches all banks assigned to them by admin."""
+    """User fetches all banks assigned to them by admin, enriched with full bank details."""
     assignments = await db.bank_assignments.find(
         {"user_id": user["id"]}, {"_id": 0}
     ).sort("created_at", 1).to_list(100)
+    if not assignments:
+        return []
+    bank_ids = [a["bank_id"] for a in assignments]
+    banks = await db.banks.find({"id": {"$in": bank_ids}}, {"_id": 0}).to_list(100)
+    banks_by_id = {b["id"]: b for b in banks}
+    for a in assignments:
+        a["bank"] = banks_by_id.get(a["bank_id"], {})
     return assignments
 
 

@@ -46,15 +46,25 @@ export default function BanksScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      Promise.all([
-        apiGet<{ recommendations: Rec[] }>("/banks/recommend/me").catch(() => ({ recommendations: [] })),
-        apiGet<any[]>("/my/bank-assignments").catch(() => []),
-      ]).then(([d, myBanks]) => {
-        const assignedIds = new Set((myBanks || []).map((b: any) => b.bank_id));
-        const filtered = assignedIds.size > 0
-          ? (d.recommendations || []).filter((r) => assignedIds.has(r.bank_id))
-          : [];
-        setRecs(filtered);
+      apiGet<any[]>("/my/bank-assignments").then((myBanks) => {
+        const enriched: Rec[] = (myBanks || [])
+          .filter((a: any) => a.bank && a.bank.id)
+          .map((a: any) => ({
+            bank_id: a.bank.id,
+            name: a.bank.name || "",
+            short_name: a.bank.short_name || "",
+            type: a.bank.type || "",
+            score: 0,
+            interest_range: a.bank.interest_min != null ? `${a.bank.interest_min}%–${a.bank.interest_max}%` : "",
+            suggested_amount: a.bank.max_funding || 0,
+            collateral_required: false,
+            processing_time_days: 0,
+            supports: a.bank.supports || [],
+            why: a.bank.why || a.bank.description || "",
+            description: a.bank.description || "",
+            why_reasons: [],
+          }));
+        setRecs(enriched);
         setLoading(false);
       }).catch(() => setLoading(false));
     }, [])
@@ -130,7 +140,7 @@ export default function BanksScreen() {
                     </View>
                     <Text style={styles.interestRate}>{item.interest_range} p.a.</Text>
                   </View>
-                  <ScoreRing score={item.score} />
+                  {item.score > 0 && <ScoreRing score={item.score} />}
                 </View>
 
                 <Text style={styles.whyText} numberOfLines={2}>{item.why}</Text>
