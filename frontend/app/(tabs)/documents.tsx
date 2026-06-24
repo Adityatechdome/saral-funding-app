@@ -11,6 +11,8 @@ import {
   Platform,
   FlatList,
   RefreshControl,
+  Modal,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -546,6 +548,8 @@ function AdminUserDocuments() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedUser, setSelectedUser] = useState<{ id: string; name: string; mobile: string } | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [rejectModal, setRejectModal] = useState<{ visible: boolean; docId: string; reason: string }>({ visible: false, docId: "", reason: "" });
 
   const load = useCallback(async () => {
     try {
@@ -586,6 +590,42 @@ function AdminUserDocuments() {
       await Linking.openURL(url);
     } catch {
       Alert.alert("Error", "Could not open document.");
+    }
+  };
+
+  const updateDocStatus = async (docId: string, status: "verified" | "rejected", reject_reason?: string) => {
+    const token = await getToken();
+    const res = await fetch(`${API_BASE}/admin/documents/${docId}/status`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ status, reject_reason: reject_reason || "" }),
+    });
+    if (!res.ok) throw new Error();
+  };
+
+  const handleVerify = async (docId: string) => {
+    setActionLoading(docId);
+    try {
+      await updateDocStatus(docId, "verified");
+      await load();
+    } catch {
+      Alert.alert("Error", "Could not verify document.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRejectSubmit = async () => {
+    const { docId, reason } = rejectModal;
+    setRejectModal((m) => ({ ...m, visible: false }));
+    setActionLoading(docId);
+    try {
+      await updateDocStatus(docId, "rejected", reason);
+      await load();
+    } catch {
+      Alert.alert("Error", "Could not reject document.");
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -713,14 +753,77 @@ function AdminUserDocuments() {
                   <Text style={adS.reasonText}>{doc.reject_reason}</Text>
                 </View>
               )}
-              <TouchableOpacity style={adS.viewBtn} onPress={() => handleView(doc.id)} activeOpacity={0.8}>
-                <ExternalLink size={13} color={colors.primaryDark} strokeWidth={2.5} />
-                <Text style={adS.viewBtnText}>View Document</Text>
-              </TouchableOpacity>
+              <View style={adS.docFooterRow}>
+                <TouchableOpacity style={adS.viewBtn} onPress={() => handleView(doc.id)} activeOpacity={0.8}>
+                  <ExternalLink size={13} color={colors.primaryDark} strokeWidth={2.5} />
+                  <Text style={adS.viewBtnText}>View</Text>
+                </TouchableOpacity>
+                {doc.status === "pending" && (
+                  <>
+                    <TouchableOpacity
+                      style={adS.verifyBtn}
+                      onPress={() =>
+                        Alert.alert("Verify Document", `Mark "${doc.doc_type}" as verified?`, [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Verify", onPress: () => handleVerify(doc.id) },
+                        ])
+                      }
+                      disabled={actionLoading === doc.id}
+                      activeOpacity={0.8}
+                    >
+                      {actionLoading === doc.id ? (
+                        <ActivityIndicator color="#FFF" size="small" />
+                      ) : (
+                        <>
+                          <CheckCircle2 size={13} color="#FFF" strokeWidth={2.5} />
+                          <Text style={adS.verifyBtnText}>Verify</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={adS.rejectBtn}
+                      onPress={() => setRejectModal({ visible: true, docId: doc.id, reason: "" })}
+                      disabled={actionLoading === doc.id}
+                      activeOpacity={0.8}
+                    >
+                      <X size={13} color="#DC2626" strokeWidth={2.5} />
+                      <Text style={adS.rejectBtnText}>Reject</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
             </View>
           );
         }}
       />
+
+      {/* Reject reason modal */}
+      <Modal visible={rejectModal.visible} transparent animationType="fade" onRequestClose={() => setRejectModal((m) => ({ ...m, visible: false }))}>
+        <View style={adS.modalOverlay}>
+          <View style={adS.modalBox}>
+            <Text style={adS.modalTitle}>Reject Document</Text>
+            <Text style={adS.modalSub}>Provide a reason so the user knows what to fix.</Text>
+            <TextInput
+              style={adS.modalInput}
+              placeholder="e.g. Image is blurry, please re-upload"
+              placeholderTextColor={colors.textDim}
+              value={rejectModal.reason}
+              onChangeText={(t) => setRejectModal((m) => ({ ...m, reason: t }))}
+              multiline
+              numberOfLines={3}
+              autoFocus
+            />
+            <View style={adS.modalActions}>
+              <TouchableOpacity style={adS.modalCancel} onPress={() => setRejectModal((m) => ({ ...m, visible: false }))} activeOpacity={0.8}>
+                <Text style={adS.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={adS.modalConfirm} onPress={handleRejectSubmit} activeOpacity={0.8}>
+                <Text style={adS.modalConfirmText}>Reject</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -777,13 +880,53 @@ const adS = StyleSheet.create({
     borderWidth: 1, borderColor: "#FECACA",
   },
   reasonText: { fontSize: 12, fontFamily: fonts.medium, color: "#DC2626", flex: 1, lineHeight: 17 },
+  docFooterRow: {
+    flexDirection: "row", gap: 8, flexWrap: "wrap",
+  },
   viewBtn: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    alignSelf: "flex-start", paddingHorizontal: 14, paddingVertical: 8,
+    paddingHorizontal: 14, paddingVertical: 8,
     borderRadius: radius.lg, borderWidth: 1,
     borderColor: colors.border, backgroundColor: colors.surface2,
   },
   viewBtnText: { fontSize: 12, fontFamily: fonts.semiBold, color: colors.primaryDark },
+  verifyBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
+    paddingVertical: 9, borderRadius: radius.lg,
+    backgroundColor: colors.primary,
+  },
+  verifyBtnText: { fontSize: 12, fontFamily: fonts.displayBold, color: "#FFF" },
+  rejectBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
+    paddingVertical: 9, borderRadius: radius.lg,
+    borderWidth: 1.5, borderColor: "#FECACA", backgroundColor: "#FEF2F2",
+  },
+  rejectBtnText: { fontSize: 12, fontFamily: fonts.displayBold, color: "#DC2626" },
+  modalOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center", justifyContent: "center", padding: 24,
+  },
+  modalBox: {
+    backgroundColor: "#FFF", borderRadius: radius.xxl, padding: 20, width: "100%", gap: 12,
+  },
+  modalTitle: { fontSize: 17, fontFamily: fonts.displayBold, color: colors.text },
+  modalSub: { fontSize: 13, fontFamily: fonts.regular, color: colors.textMuted, lineHeight: 18 },
+  modalInput: {
+    borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.lg,
+    padding: 12, fontSize: 13, fontFamily: fonts.regular, color: colors.text,
+    minHeight: 80, textAlignVertical: "top",
+  },
+  modalActions: { flexDirection: "row", gap: 10, marginTop: 4 },
+  modalCancel: {
+    flex: 1, paddingVertical: 11, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, alignItems: "center",
+  },
+  modalCancelText: { fontSize: 14, fontFamily: fonts.semiBold, color: colors.textMuted },
+  modalConfirm: {
+    flex: 1, paddingVertical: 11, borderRadius: radius.lg,
+    backgroundColor: "#DC2626", alignItems: "center",
+  },
+  modalConfirmText: { fontSize: 14, fontFamily: fonts.displayBold, color: "#FFF" },
 });
 
 export default function DocumentsTab() {
