@@ -133,6 +133,7 @@ export default function LeadDetail() {
   const [assigning, setAssigning] = useState(false);
   const [stageModal, setStageModal] = useState<any>(null); // {app}
   const [stageNote, setStageNote] = useState("");
+  const [selectedStage, setSelectedStage] = useState("");
   const [updatingStage, setUpdatingStage] = useState(false);
 
   const load = async () => {
@@ -466,7 +467,7 @@ export default function LeadDetail() {
                 <View style={{ flexDirection: "row", gap: 6 }}>
                   <TouchableOpacity
                     style={[styles.docActionBtn, { backgroundColor: colors.primarySoft }]}
-                    onPress={() => { setStageModal(app); setStageNote(""); }}
+                    onPress={() => { setStageModal(app); setStageNote(""); setSelectedStage(app.stage || ""); }}
                   >
                     <Text style={[styles.docActionText, { color: colors.primaryDark }]}>Stage</Text>
                   </TouchableOpacity>
@@ -701,24 +702,21 @@ export default function LeadDetail() {
                   under_review:"Under Review", approved:"Approved",
                   disbursed:"Disbursed", rejected:"Rejected",
                 };
-                const isCurrent = stageModal?.stage === st;
+                const isSelected = selectedStage === st;
                 const isRej = st === "rejected";
                 return (
                   <TouchableOpacity
                     key={st}
                     style={[styles.stageChip, {
-                      borderColor: isCurrent ? colors.primary : isRej ? "#dc2626" : colors.border,
-                      backgroundColor: isCurrent ? colors.primarySoft : isRej ? "#fee2e2" : colors.surface2,
+                      borderColor: isSelected ? colors.primary : isRej ? "#dc2626" : colors.border,
+                      backgroundColor: isSelected ? colors.primarySoft : isRej ? "#fee2e2" : colors.surface2,
                     }]}
-                    onPress={() => updateAppStage(stageModal.id, st)}
+                    onPress={() => setSelectedStage(st)}
                     disabled={updatingStage}
                   >
-                    {updatingStage && isCurrent
-                      ? <ActivityIndicator size="small" color={colors.primary} />
-                      : <Text style={[styles.stageChipText, {
-                          color: isCurrent ? colors.primaryDark : isRej ? "#dc2626" : colors.text,
-                        }]}>{labels[st]}</Text>
-                    }
+                    <Text style={[styles.stageChipText, {
+                      color: isSelected ? colors.primaryDark : isRej ? "#dc2626" : colors.text,
+                    }]}>{labels[st]}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -733,6 +731,18 @@ export default function LeadDetail() {
               placeholderTextColor={colors.textPlaceholder}
               multiline
             />
+
+            <TouchableOpacity
+              style={[styles.assignBtn, { marginTop: 12, opacity: (!selectedStage || updatingStage) ? 0.5 : 1 }]}
+              disabled={!selectedStage || updatingStage}
+              onPress={() => updateAppStage(stageModal.id, selectedStage)}
+              activeOpacity={0.85}
+            >
+              {updatingStage
+                ? <ActivityIndicator color="#FFF" size="small" />
+                : <Text style={styles.assignBtnText}>Save Stage</Text>
+              }
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

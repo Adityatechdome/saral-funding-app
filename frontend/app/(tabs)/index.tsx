@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -216,7 +217,7 @@ export default function Dashboard() {
                   key={m.id}
                   testID={`admin-nav-${m.id}`}
                   style={adStyles.moduleTile}
-                  onPress={() => router.push(`/admin/${m.id}` as any)}
+                  onPress={() => router.push((m.id === "documents" ? "/(tabs)/documents" : `/admin/${m.id}`) as any)}
                   activeOpacity={0.85}
                 >
                   <View style={[adStyles.moduleIcon, { backgroundColor: m.color }]}>
@@ -266,43 +267,6 @@ export default function Dashboard() {
             {alerts.length > 0 && <View style={styles.badgeDot} />}
           </TouchableOpacity>
         </View>
-
-        {/* ── Readiness Hero Card ── */}
-        <TouchableOpacity
-          style={styles.heroCard}
-          testID="readiness-card"
-          onPress={() => router.push("/readiness")}
-          activeOpacity={0.92}
-        >
-          <Text style={styles.heroLabel}>Funding Readiness Score</Text>
-
-          <View style={styles.heroInner}>
-            <ReadinessRing score={score} size={140} />
-
-            <View style={styles.heroStats}>
-              <View style={styles.heroStatBox}>
-                <TrendingUp size={14} color="rgba(255,255,255,0.7)" strokeWidth={2} />
-                <Text style={styles.heroStatVal}>{formatINR(data?.funding_estimate || 0)}</Text>
-                <Text style={styles.heroStatKey}>Eligible</Text>
-              </View>
-              <View style={[styles.heroStatBox, { borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.15)", marginTop: 8, paddingTop: 12 }]}>
-                <Zap size={14} color="rgba(255,255,255,0.7)" strokeWidth={2} />
-                <Text style={styles.heroStatVal}>{formatINR(data?.subsidy_estimate || 0)}</Text>
-                <Text style={styles.heroStatKey}>Subsidy</Text>
-              </View>
-            </View>
-          </View>
-
-          {readiness && readiness.actions.length > 0 && (
-            <View style={styles.heroCta}>
-              <AlertCircle size={12} color="rgba(255,255,255,0.7)" strokeWidth={2} />
-              <Text style={styles.heroCtaText}>
-                {readiness.actions.length} action{readiness.actions.length > 1 ? "s" : ""} to improve your score
-              </Text>
-              <ChevronRight size={12} color="rgba(255,255,255,0.7)" strokeWidth={2} style={{ marginLeft: "auto" }} />
-            </View>
-          )}
-        </TouchableOpacity>
 
         <View style={{ paddingHorizontal: spacing.md }}>
 
@@ -384,6 +348,24 @@ export default function Dashboard() {
               <Text style={styles.qaSub}>30-min advisor call</Text>
             </View>
             <ChevronRight size={16} color={colors.primaryDark} strokeWidth={2} />
+          </TouchableOpacity>
+
+          {/* ── WhatsApp Support ── */}
+          <TouchableOpacity
+            testID="whatsapp-cta"
+            style={styles.waBtn}
+            onPress={() => Linking.openURL("https://wa.me/919893869899?text=Hello%2C%20I%20am%20reaching%20out%20from%20the%20Saral%20Funding%20app.%20I%20would%20like%20some%20assistance%20regarding%20my%20funding%20journey.%20Could%20your%20team%20please%20help%20me%3F")}
+            activeOpacity={0.85}
+          >
+            <View style={styles.waIcon}>
+              {/* WhatsApp SVG logo */}
+              <Text style={{ fontSize: 20, lineHeight: 24 }}>💬</Text>
+            </View>
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.waTitle}>WhatsApp Support</Text>
+              <Text style={styles.waSub}>Chat with our team instantly</Text>
+            </View>
+            <ChevronRight size={16} color="#FFF" strokeWidth={2} />
           </TouchableOpacity>
           <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
             <TouchableOpacity
@@ -737,6 +719,39 @@ const styles = StyleSheet.create({
     padding: spacing.sm2,
     gap: 4,
     ...elevation.l1,
+  },
+  waBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#25D366",
+    borderRadius: radius.xl,
+    padding: spacing.sm2,
+    paddingVertical: 14,
+    marginBottom: 10,
+    ...elevation.l1,
+    shadowColor: "#25D366",
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  waIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  waTitle: {
+    fontSize: 13,
+    fontFamily: fonts.displayBold,
+    color: "#FFF",
+  },
+  waSub: {
+    fontSize: 11,
+    fontFamily: fonts.regular,
+    color: "rgba(255,255,255,0.85)",
+    marginTop: 2,
   },
   qaTitle: {
     fontSize: 13,

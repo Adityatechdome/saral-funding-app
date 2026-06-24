@@ -82,11 +82,12 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="advisor"
         options={{
+          href: isAdmin ? undefined : null,
           tabBarIcon: ({ focused }) => (
             <TabIcon
-              label={isAdmin ? "Calendly" : "Advisor"}
+              label="Calendly"
               focused={focused}
-              Icon={isAdmin ? CalendarDays : Sparkles}
+              Icon={CalendarDays}
             />
           ),
         }}

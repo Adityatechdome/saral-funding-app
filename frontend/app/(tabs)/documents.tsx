@@ -27,6 +27,7 @@ import {
   FolderOpen,
   Info,
   ChevronLeft,
+  ChevronRight,
   FileSearch,
   User as UserIcon,
 } from "lucide-react-native";
@@ -533,18 +534,25 @@ const s = StyleSheet.create({
   },
 });
 
-// ── Admin: All User Documents ──
+// ── Admin: User-first Documents View ──
+const STATUS_CFG: Record<string, { bg: string; color: string }> = {
+  verified: { bg: colors.primarySoft, color: colors.primaryDark },
+  rejected: { bg: "#FEE2E2", color: "#DC2626" },
+  pending:  { bg: "#FEF3C7", color: "#92400E" },
+};
+
 function AdminUserDocuments() {
-  const [docs, setDocs] = useState<any[]>([]);
+  const [allDocs, setAllDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<{ id: string; name: string; mobile: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await apiGet<any[]>("/admin/documents");
-      setDocs(Array.isArray(res) ? res : []);
+      const res = await apiGet<any>("/admin/documents");
+      setAllDocs(res.items ?? []);
     } catch {
-      setDocs([]);
+      setAllDocs([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -553,110 +561,229 @@ function AdminUserDocuments() {
 
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
+  // Group documents by user
+  const userMap = new Map<string, { id: string; name: string; mobile: string; docs: any[] }>();
+  allDocs.forEach((doc) => {
+    const uid = doc.user?.id || doc.user_id || "unknown";
+    const name = doc.user?.full_name || "Unknown User";
+    const mobile = doc.user?.mobile ? `+${doc.user.mobile}` : "";
+    if (!userMap.has(uid)) userMap.set(uid, { id: uid, name, mobile, docs: [] });
+    userMap.get(uid)!.docs.push(doc);
+  });
+  const userList = Array.from(userMap.values());
+
+  // Docs for selected user
+  const selectedDocs = selectedUser ? (userMap.get(selectedUser.id)?.docs ?? []) : [];
+
+  const handleView = async (docId: string) => {
+    try {
+      const token = await getToken();
+      const response = await fetch(`${API_BASE}/admin/documents/${docId}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error();
+      const { url } = await response.json();
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert("Error", "Could not open document.");
+    }
+  };
+
+  // ── User list view ──
+  if (!selectedUser) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface2 }} edges={["top"]}>
+        <View style={adS.header}>
+          <FileSearch size={18} color={colors.primaryDark} strokeWidth={2} />
+          <View style={{ flex: 1 }}>
+            <Text style={adS.headerTitle}>User Documents</Text>
+            <Text style={adS.headerSub}>{userList.length} users · {allDocs.length} docs total</Text>
+          </View>
+        </View>
+
+        {loading ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+        ) : userList.length === 0 ? (
+          <View style={adS.emptyBox}>
+            <FileSearch size={40} color={colors.textDim} strokeWidth={1.5} />
+            <Text style={adS.emptyTitle}>No Documents Found</Text>
+            <Text style={adS.emptySub}>Documents uploaded by users will appear here.</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={userList}
+            keyExtractor={(u) => u.id}
+            contentContainerStyle={{ padding: spacing.md, paddingBottom: 100 }}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => { setRefreshing(true); load(); }}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
+              />
+            }
+            renderItem={({ item: u }) => {
+              const verified = u.docs.filter((d: any) => d.status === "verified").length;
+              const pending  = u.docs.filter((d: any) => d.status === "pending").length;
+              const rejected = u.docs.filter((d: any) => d.status === "rejected").length;
+              return (
+                <TouchableOpacity
+                  style={adS.userCard}
+                  onPress={() => setSelectedUser({ id: u.id, name: u.name, mobile: u.mobile })}
+                  activeOpacity={0.8}
+                >
+                  <View style={adS.avatar}>
+                    <Text style={adS.avatarText}>{u.name.charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={adS.userName}>{u.name}</Text>
+                    <Text style={adS.userMobile}>{u.mobile}</Text>
+                    <View style={adS.docCountRow}>
+                      {verified > 0 && (
+                        <View style={[adS.miniPill, { backgroundColor: colors.primarySoft }]}>
+                          <Text style={[adS.miniPillText, { color: colors.primaryDark }]}>{verified} verified</Text>
+                        </View>
+                      )}
+                      {pending > 0 && (
+                        <View style={[adS.miniPill, { backgroundColor: "#FEF3C7" }]}>
+                          <Text style={[adS.miniPillText, { color: "#92400E" }]}>{pending} pending</Text>
+                        </View>
+                      )}
+                      {rejected > 0 && (
+                        <View style={[adS.miniPill, { backgroundColor: "#FEE2E2" }]}>
+                          <Text style={[adS.miniPillText, { color: "#DC2626" }]}>{rejected} rejected</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                  <ChevronRight size={16} color={colors.textDim} strokeWidth={2} />
+                </TouchableOpacity>
+              );
+            }}
+          />
+        )}
+      </SafeAreaView>
+    );
+  }
+
+  // ── User documents detail view ──
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface2 }} edges={["top"]}>
-      <View style={adocS.header}>
-        <FileSearch size={18} color={colors.primaryDark} strokeWidth={2} />
+      <View style={adS.detailHeader}>
+        <TouchableOpacity onPress={() => setSelectedUser(null)} style={adS.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <ChevronLeft size={22} color={colors.text} strokeWidth={2} />
+        </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={adocS.headerTitle}>User Documents</Text>
-          <Text style={adocS.headerSub}>{docs.length} document{docs.length !== 1 ? "s" : ""} total</Text>
+          <Text style={adS.headerTitle}>{selectedUser.name}</Text>
+          <Text style={adS.headerSub}>{selectedUser.mobile} · {selectedDocs.length} document{selectedDocs.length !== 1 ? "s" : ""}</Text>
         </View>
       </View>
 
-      {loading ? (
-        <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
-      ) : docs.length === 0 ? (
-        <View style={adocS.emptyBox}>
-          <FileSearch size={44} color={colors.textDim} strokeWidth={1.5} />
-          <Text style={adocS.emptyTitle}>No Documents Found</Text>
-          <Text style={adocS.emptySub}>User documents will appear here once uploaded.</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={docs}
-          keyExtractor={(d) => d.id}
-          contentContainerStyle={{ padding: spacing.md, paddingBottom: 100 }}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); load(); }}
-              tintColor={colors.primary}
-              colors={[colors.primary]}
-            />
-          }
-          renderItem={({ item }) => (
-            <View style={adocS.docCard}>
-              <View style={adocS.docIcon}>
-                <FileText size={16} color={colors.primaryDark} strokeWidth={2} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={adocS.docType}>{item.doc_type}</Text>
-                <View style={adocS.userRow}>
-                  <UserIcon size={10} color={colors.textMuted} strokeWidth={2} />
-                  <Text style={adocS.userName}>{item.user_name || item.user_id}</Text>
+      <FlatList
+        data={selectedDocs}
+        keyExtractor={(d) => d.id}
+        contentContainerStyle={{ padding: spacing.md, paddingBottom: 100 }}
+        showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+        renderItem={({ item: doc }) => {
+          const cfg = STATUS_CFG[doc.status] ?? STATUS_CFG.pending;
+          return (
+            <View style={adS.docCard}>
+              <View style={adS.docCardHeader}>
+                <View style={adS.docIcon}>
+                  <FileText size={16} color={colors.primaryDark} strokeWidth={2} />
                 </View>
-                <Text style={adocS.fileName} numberOfLines={1}>{item.filename || item.file_name}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={adS.docType}>{doc.doc_type}</Text>
+                  {doc.file_name && <Text style={adS.docFile} numberOfLines={1}>{doc.file_name}</Text>}
+                </View>
+                <View style={[adS.statusPill, { backgroundColor: cfg.bg }]}>
+                  <Text style={[adS.statusText, { color: cfg.color }]}>{doc.status}</Text>
+                </View>
               </View>
-              <View style={[adocS.statusBadge, item.status === "verified" ? adocS.statusVerified : item.status === "rejected" ? adocS.statusRejected : adocS.statusPending]}>
-                <Text style={[adocS.statusText, item.status === "verified" ? { color: colors.primaryDark } : item.status === "rejected" ? { color: "#DC2626" } : { color: "#92400E" }]}>
-                  {item.status}
-                </Text>
-              </View>
+              <Text style={adS.docDate}>
+                Uploaded: {doc.created_at
+                  ? new Date(doc.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+                  : "—"}
+              </Text>
+              {doc.status === "rejected" && doc.reject_reason && (
+                <View style={adS.reasonBox}>
+                  <AlertCircle size={11} color="#DC2626" strokeWidth={2} />
+                  <Text style={adS.reasonText}>{doc.reject_reason}</Text>
+                </View>
+              )}
+              <TouchableOpacity style={adS.viewBtn} onPress={() => handleView(doc.id)} activeOpacity={0.8}>
+                <ExternalLink size={13} color={colors.primaryDark} strokeWidth={2.5} />
+                <Text style={adS.viewBtnText}>View Document</Text>
+              </TouchableOpacity>
             </View>
-          )}
-        />
-      )}
+          );
+        }}
+      />
     </SafeAreaView>
   );
 }
 
-const adocS = StyleSheet.create({
+const adS = StyleSheet.create({
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: spacing.md,
-    paddingTop: 14,
-    paddingBottom: 12,
-    backgroundColor: "#FFF",
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: spacing.md, paddingTop: 14, paddingBottom: 12,
+    backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  headerTitle: { fontSize: 18, fontFamily: fonts.displayBold, color: colors.text },
+  detailHeader: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: spacing.md, paddingTop: 10, paddingBottom: 12,
+    backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  backBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  headerTitle: { fontSize: 16, fontFamily: fonts.displayBold, color: colors.text },
   headerSub: { fontSize: 11, fontFamily: fonts.regular, color: colors.textMuted, marginTop: 1 },
   emptyBox: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, marginTop: -60 },
-  emptyTitle: { fontSize: 18, fontFamily: fonts.displayBold, color: colors.text },
+  emptyTitle: { fontSize: 17, fontFamily: fonts.displayBold, color: colors.text },
   emptySub: { fontSize: 13, fontFamily: fonts.regular, color: colors.textMuted, textAlign: "center", lineHeight: 20 },
+  userCard: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: "#FFF", borderRadius: radius.xl, borderWidth: 1,
+    borderColor: colors.border, padding: 14, marginBottom: 8,
+  },
+  avatar: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center",
+  },
+  avatarText: { fontSize: 18, fontFamily: fonts.displayBold, color: colors.primaryDark },
+  userName: { fontSize: 14, fontFamily: fonts.displayBold, color: colors.text },
+  userMobile: { fontSize: 12, fontFamily: fonts.regular, color: colors.textMuted, marginTop: 1 },
+  docCountRow: { flexDirection: "row", gap: 6, marginTop: 6, flexWrap: "wrap" },
+  miniPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill },
+  miniPillText: { fontSize: 10, fontFamily: fonts.bold },
   docCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: "#FFF",
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 12,
-    marginBottom: 8,
+    backgroundColor: "#FFF", borderRadius: radius.xl, borderWidth: 1,
+    borderColor: colors.border, padding: spacing.md, gap: 8,
   },
+  docCardHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   docIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.lg,
-    backgroundColor: colors.primarySoft,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
+    width: 36, height: 36, borderRadius: radius.lg,
+    backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center", flexShrink: 0,
   },
-  docType: { fontSize: 13, fontFamily: fonts.semiBold, color: colors.text },
-  userRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
-  userName: { fontSize: 11, fontFamily: fonts.medium, color: colors.textMuted },
-  fileName: { fontSize: 11, fontFamily: fonts.regular, color: colors.textDim, marginTop: 2 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill, flexShrink: 0 },
-  statusVerified: { backgroundColor: colors.primarySoft },
-  statusRejected: { backgroundColor: "#FEE2E2" },
-  statusPending: { backgroundColor: "#FEF3C7" },
-  statusText: { fontSize: 10, fontFamily: fonts.bold, textTransform: "capitalize" },
+  docType: { fontSize: 14, fontFamily: fonts.displayBold, color: colors.text },
+  docFile: { fontSize: 11, fontFamily: fonts.regular, color: colors.textDim, marginTop: 1 },
+  statusPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill, flexShrink: 0 },
+  statusText: { fontSize: 11, fontFamily: fonts.bold, textTransform: "capitalize" },
+  docDate: { fontSize: 12, fontFamily: fonts.regular, color: colors.textMuted },
+  reasonBox: {
+    flexDirection: "row", alignItems: "flex-start", gap: 6,
+    backgroundColor: "#FEF2F2", borderRadius: radius.lg, padding: 10,
+    borderWidth: 1, borderColor: "#FECACA",
+  },
+  reasonText: { fontSize: 12, fontFamily: fonts.medium, color: "#DC2626", flex: 1, lineHeight: 17 },
+  viewBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    alignSelf: "flex-start", paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: radius.lg, borderWidth: 1,
+    borderColor: colors.border, backgroundColor: colors.surface2,
+  },
+  viewBtnText: { fontSize: 12, fontFamily: fonts.semiBold, color: colors.primaryDark },
 });
 
 export default function DocumentsTab() {
