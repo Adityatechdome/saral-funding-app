@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -50,9 +51,11 @@ export default function Login() {
 
           {/* Brand */}
           <View style={styles.brandRow}>
-            <View style={styles.logoMark}>
-              <Text style={styles.logoText}>S</Text>
-            </View>
+            <Image
+              source={require("../assets/images/logo-icon.png")}
+              style={styles.logoMark}
+              resizeMode="contain"
+            />
             <View>
               <Text style={styles.brandName}>Saral Funding</Text>
               <Text style={styles.brandTagline}>Government schemes, simplified</Text>
@@ -138,14 +141,6 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: radius.lg,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: colors.primaryDark,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 4,
   },
   logoText: {
     fontSize: 24,

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, Image } from "react-native";
 import { useRouter } from "expo-router";
 
 import { colors } from "@/src/theme";
@@ -28,7 +28,7 @@ export default function Splash() {
 
   return (
     <View style={styles.container} testID="splash-screen">
-      <View style={styles.logoBadge}><Text style={styles.logoText}>S</Text></View>
+      <Image source={require("../assets/images/logo-icon.png")} style={styles.logoBadge} resizeMode="contain" />
       <Text style={styles.title}>Saral Funding</Text>
       <Text style={styles.subtitle}>Discover government schemes you{"'"}re eligible for</Text>
       <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
@@ -38,8 +38,7 @@ export default function Splash() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white, alignItems: "center", justifyContent: "center", padding: 24 },
-  logoBadge: { width: 72, height: 72, borderRadius: 18, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginBottom: 16 },
-  logoText: { fontSize: 36, fontWeight: "800", color: "#FFF" },
+  logoBadge: { width: 90, height: 90, marginBottom: 16 },
   title: { fontSize: 28, fontWeight: "800", color: colors.text },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 8, textAlign: "center" },
 });

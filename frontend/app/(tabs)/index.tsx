@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   Linking,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -195,9 +196,16 @@ export default function Dashboard() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.greeting}>{greeting}</Text>
-              <Text style={styles.name} numberOfLines={1}>{user?.full_name || "Admin"}</Text>
+            <View style={styles.logoWrap}>
+              <Image
+                source={require("../../assets/images/logo-icon.png")}
+                style={styles.logoIcon}
+                resizeMode="contain"
+              />
+              <View>
+                <Text style={styles.logoName}>SARAL</Text>
+                <Text style={styles.logoTagline}>Funding Clear Hai!</Text>
+              </View>
             </View>
             <TouchableOpacity
               testID="bell-btn"
@@ -274,9 +282,16 @@ export default function Dashboard() {
       >
         {/* ── Header ── */}
         <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.greeting}>{greeting}</Text>
-            <Text style={styles.name} numberOfLines={1}>{user?.full_name || "Friend"}</Text>
+          <View style={styles.logoWrap}>
+            <Image
+              source={require("../../assets/images/logo-icon.png")}
+              style={styles.logoIcon}
+              resizeMode="contain"
+            />
+            <View>
+              <Text style={styles.logoName}>SARAL</Text>
+              <Text style={styles.logoTagline}>Funding Clear Hai!</Text>
+            </View>
           </View>
           <TouchableOpacity
             testID="bell-btn"
@@ -546,6 +561,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
     paddingBottom: spacing.sm2,
+  },
+  logoWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  logoIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+  },
+  logoName: {
+    fontSize: 18,
+    fontFamily: fonts.displayBold,
+    color: "#0D4A47",
+    letterSpacing: 1.5,
+    lineHeight: 22,
+  },
+  logoTagline: {
+    fontSize: 10,
+    fontFamily: fonts.medium,
+    color: "#0D9488",
+    letterSpacing: 0.5,
   },
   greeting: {
     fontSize: 12,
