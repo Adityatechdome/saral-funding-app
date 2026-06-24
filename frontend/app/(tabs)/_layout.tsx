@@ -27,7 +27,7 @@ function TabIcon({ label, focused, Icon }: TabIconProps) {
           strokeWidth={focused ? 2.2 : 1.8}
         />
       </View>
-      <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
+      <Text style={[styles.tabLabel, focused && styles.tabLabelActive]} numberOfLines={1}>
         {label}
       </Text>
     </View>
@@ -64,7 +64,7 @@ export default function TabsLayout() {
         options={{
           tabBarIcon: ({ focused }) => (
             <TabIcon
-              label={isAdmin ? "User Funnel" : "Applications"}
+              label={isAdmin ? "Funnel" : "Applications"}
               focused={focused}
               Icon={isAdmin ? Users : ClipboardList}
             />
@@ -97,7 +97,7 @@ export default function TabsLayout() {
         options={{
           tabBarIcon: ({ focused }) => (
             <TabIcon
-              label={isAdmin ? "User Docs" : "Documents"}
+              label={isAdmin ? "Docs" : "Documents"}
               focused={focused}
               Icon={isAdmin ? FileSearch : FolderOpen}
             />
@@ -142,10 +142,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primarySoft,
   },
   tabLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontFamily: fonts.medium,
     color: colors.textDim,
-    letterSpacing: 0.2,
+    letterSpacing: 0,
+    textAlign: "center",
   },
   tabLabelActive: {
     color: colors.primary,

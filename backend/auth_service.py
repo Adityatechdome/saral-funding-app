@@ -1,93 +1,111 @@
 """
-Twilio Verify for OTP login.
+OTP service using MSG91 DLT Flow API.
 
-When TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID are set,
-real SMS OTPs are sent via Twilio Verify.
-Falls back to mock OTP (123456) when env vars are missing — safe for local dev.
+USE_MOCK_OTP=true  → always accept 123456, no real SMS (dev/testing)
+USE_MOCK_OTP=false → real SMS via MSG91 (production)
 """
 import os
+import time
+import secrets
 import logging
-from typing import Optional, Dict, Any
+import httpx
+from typing import Dict, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
-TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
-TWILIO_VERIFY_SERVICE_SID = os.environ.get("TWILIO_VERIFY_SERVICE_SID", "")
+MSG91_API_KEY     = os.environ.get("MSG91_API_KEY", "")
+MSG91_TEMPLATE_ID = os.environ.get("MSG91_TEMPLATE_ID", "")
+MSG91_SENDER_ID   = os.environ.get("MSG91_SENDER_ID", "FAIFLL")
+MSG91_ENTITY_ID   = os.environ.get("MSG91_ENTITY_ID", "")
 
-TWILIO_ENABLED = bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_VERIFY_SERVICE_SID)
+USE_MOCK_OTP = os.environ.get("USE_MOCK_OTP", "true").strip().lower() == "true"
+MSG91_ENABLED = bool(MSG91_API_KEY and MSG91_TEMPLATE_ID) and not USE_MOCK_OTP
 
-_client = None
+MSG91_FLOW_URL = "https://control.msg91.com/api/v5/flow"
+
+# In-memory OTP store: mobile -> (otp, expiry_timestamp)
+_otp_store: Dict[str, Tuple[str, float]] = {}
 
 
-def _get_client():
-    global _client
-    if _client is not None:
-        return _client
-    if not TWILIO_ENABLED:
-        return None
-    try:
-        from twilio.rest import Client
-        _client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        logger.info("Twilio client initialised")
-    except Exception as e:
-        logger.warning(f"Twilio init failed: {e}")
-        _client = None
-    return _client
+def _generate_otp() -> str:
+    return str(secrets.randbelow(900000) + 100000)  # 6-digit OTP
+
+
+def _to_msg91_mobile(mobile: str) -> str:
+    mobile = mobile.strip().lstrip("+")
+    if mobile.startswith("91") and len(mobile) == 12:
+        return mobile
+    if len(mobile) == 10:
+        return f"91{mobile}"
+    return mobile
 
 
 def send_otp(mobile: str) -> Dict[str, Any]:
-    """
-    Send OTP to mobile number via Twilio Verify.
-    Mobile should be E.164 format e.g. +919876543210
-    Returns {"success": True, "mode": "twilio"} or {"success": True, "mode": "mock"}
-    Raises ValueError on Twilio error.
-    """
-    if not TWILIO_ENABLED:
-        logger.info(f"Mock OTP sent to {mobile} (Twilio not configured)")
+    if USE_MOCK_OTP or not MSG91_ENABLED:
+        logger.info(f"Mock OTP → {mobile} (USE_MOCK_OTP={USE_MOCK_OTP})")
         return {"success": True, "mode": "mock", "message": "OTP sent (use 123456 in dev mode)"}
 
-    client = _get_client()
-    if client is None:
-        return {"success": True, "mode": "mock", "message": "OTP sent (use 123456 — Twilio init failed)"}
+    otp = _generate_otp()
+    expiry = time.time() + 300  # 5 minutes
+    _otp_store[mobile] = (otp, expiry)
 
+    msg91_mobile = _to_msg91_mobile(mobile)
     try:
-        verification = client.verify.v2.services(TWILIO_VERIFY_SERVICE_SID) \
-            .verifications.create(to=mobile, channel="sms")
-        logger.info(f"Twilio OTP sent to {mobile}, status={verification.status}")
-        return {"success": True, "mode": "twilio", "message": "OTP sent via SMS"}
-    except Exception as e:
-        logger.error(f"Twilio send_otp failed for {mobile}: {e}")
-        raise ValueError(f"Could not send OTP: {str(e)}")
+        resp = httpx.post(
+            MSG91_FLOW_URL,
+            headers={"authkey": MSG91_API_KEY, "content-type": "application/json"},
+            json={
+                "template_id":       MSG91_TEMPLATE_ID,
+                "sender":            MSG91_SENDER_ID,
+                "short_url":         "0",
+                "realTimeResponse":  "1",
+                "pe_id":             MSG91_ENTITY_ID,
+                "recipients": [
+                    {"mobiles": msg91_mobile, "var": otp}
+                ],
+            },
+            timeout=10,
+        )
+        data = resp.json()
+        logger.info(f"MSG91 send OTP → {msg91_mobile}: {data}")
+        if data.get("type") == "success" or resp.status_code == 200:
+            return {"success": True, "mode": "msg91", "message": "OTP sent via SMS"}
+        # Clean up if failed
+        _otp_store.pop(mobile, None)
+        raise ValueError(data.get("message", "MSG91 error"))
+    except httpx.RequestError as e:
+        _otp_store.pop(mobile, None)
+        logger.error(f"MSG91 network error for {mobile}: {e}")
+        raise ValueError("Could not send OTP. Please try again.")
 
 
 def verify_otp(mobile: str, code: str) -> bool:
-    """
-    Verify OTP code for mobile number.
-    Returns True if approved, False otherwise.
-    In mock mode, accepts 123456.
-    """
-    if not TWILIO_ENABLED:
+    if USE_MOCK_OTP or not MSG91_ENABLED:
         return code == "123456"
 
-    client = _get_client()
-    if client is None:
-        return code == "123456"
-
-    try:
-        check = client.verify.v2.services(TWILIO_VERIFY_SERVICE_SID) \
-            .verification_checks.create(to=mobile, code=code)
-        logger.info(f"Twilio OTP check for {mobile}: status={check.status}")
-        return check.status == "approved"
-    except Exception as e:
-        logger.error(f"Twilio verify_otp failed for {mobile}: {e}")
+    entry = _otp_store.get(mobile)
+    if not entry:
+        logger.warning(f"No OTP found for {mobile}")
         return False
+
+    otp, expiry = entry
+    if time.time() > expiry:
+        _otp_store.pop(mobile, None)
+        logger.warning(f"OTP expired for {mobile}")
+        return False
+
+    if otp == code:
+        _otp_store.pop(mobile, None)  # one-time use
+        logger.info(f"OTP verified for {mobile}")
+        return True
+
+    logger.warning(f"OTP mismatch for {mobile}")
+    return False
 
 
 def is_enabled() -> bool:
-    return TWILIO_ENABLED
+    return MSG91_ENABLED
 
 
-# Keep firebase_enabled as alias so existing imports don't break
 def firebase_enabled() -> bool:
-    return TWILIO_ENABLED
+    return MSG91_ENABLED

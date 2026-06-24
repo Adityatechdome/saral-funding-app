@@ -71,7 +71,7 @@ async def health_check():
         counts = {}
 
     # Check optional services
-    twilio_configured = bool(os.environ.get("TWILIO_ACCOUNT_SID"))
+    twilio_configured = bool(os.environ.get("MSG91_API_KEY"))
     openai_configured = bool(os.environ.get("OPENAI_API_KEY"))
     azure_configured = bool(os.environ.get("AZURE_ACCOUNT_NAME") and os.environ.get("AZURE_SAS_TOKEN"))
     ghl_configured = bool(os.environ.get("GHL_API_KEY"))
@@ -85,7 +85,7 @@ async def health_check():
             "counts": counts,
         },
         "services": {
-            "twilio_otp": "configured" if twilio_configured else "mock_mode (OTP=123456)",
+            "msg91_otp": "configured" if twilio_configured else "mock_mode (OTP=123456)",
             "openai": "configured" if openai_configured else "not configured (fallback active)",
             "azure_storage": "configured" if azure_configured else "not configured",
             "ghl_crm": "configured" if ghl_configured else "not configured",

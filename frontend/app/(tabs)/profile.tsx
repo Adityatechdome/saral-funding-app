@@ -132,8 +132,9 @@ export default function Profile() {
     }
   };
 
+  const isAdmin = me?.role && me.role !== "user";
   const actions = [
-    { id: "book", label: "Book Consultation", Icon: Phone, onPress: () => router.push("/booking") },
+    ...(!isAdmin ? [{ id: "book", label: "Book Consultation", Icon: Phone, onPress: () => router.push("/booking") }] : []),
     { id: "notif", label: "Notifications", Icon: Bell, onPress: () => router.push("/notifications") },
     { id: "settings", label: "Settings", Icon: Settings, onPress: () => router.push("/settings") },
   ];
