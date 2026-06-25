@@ -159,6 +159,19 @@ function UserDocumentsTab() {
   };
 
   const handleDelete = async (docId: string) => {
+    if (Platform.OS === "web") {
+      if (!window.confirm("Remove this pending document?")) return;
+      setDeleting(docId);
+      try {
+        await apiDelete(`/documents/${docId}`);
+        await load();
+      } catch {
+        alert("Could not delete document.");
+      } finally {
+        setDeleting(null);
+      }
+      return;
+    }
     Alert.alert("Delete Document", "Remove this pending document?", [
       { text: "Cancel", style: "cancel" },
       {
