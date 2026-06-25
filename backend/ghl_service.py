@@ -99,16 +99,16 @@ def _load_pipeline() -> None:
     logger.warning(f"GHL pipeline '{GHL_PIPELINE_NAME}' not found in account")
 
 
-# Map our lead stages → GHL stage names (adjust if your GHL stage names differ)
+# Map our lead stages → GHL stage names
 OUR_STAGE_TO_GHL: dict = {
-    "new":           "New",
-    "contacted":     "Contacted",
-    "interested":    "Interested",
-    "documentation": "Documentation",
-    "submitted":     "Submitted",
-    "approved":      "Approved",
-    "disbursed":     "Disbursed",
-    "closed":        "Closed",
+    "new":           "Invite Accepted",
+    "contacted":     "1st msg sent/replied",
+    "interested":    "meet link shared",
+    "documentation": "Follow up taken",
+    "submitted":     "booked",
+    "approved":      "booked",
+    "disbursed":     "booked",
+    "closed":        "booked",
 }
 
 
