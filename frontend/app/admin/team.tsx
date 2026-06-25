@@ -14,6 +14,7 @@ import { apiGet, apiPost, apiDelete } from "@/src/api";
 import { BackBar } from "@/src/components/StepBar";
 
 const ROLES = [
+  { value: "super_admin",       label: "Super Admin",       desc: "Full access including team & config",      color: "#FEF3C7", text: "#92400E" },
   { value: "manager",           label: "Manager",           desc: "Full access except super admin actions",  color: "#DBEAFE", text: "#1D4ED8" },
   { value: "expert",            label: "Expert",            desc: "View leads, add notes, recommend schemes", color: "#EDE9FE", text: "#5B21B6" },
   { value: "sales_executive",   label: "Sales Executive",   desc: "Manage leads and consultations",           color: colors.primarySoft, text: colors.primaryDark },
@@ -38,6 +39,7 @@ export default function AdminTeam() {
   const router = useRouter();
   const [team, setTeam] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUserRole, setCurrentUserRole] = useState<string>("");
 
   // Invite modal state
   const [showInvite, setShowInvite] = useState(false);
@@ -53,8 +55,12 @@ export default function AdminTeam() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiGet<any[]>("/admin/team");
+      const [res, me] = await Promise.all([
+        apiGet<any[]>("/admin/team"),
+        apiGet<any>("/auth/me"),
+      ]);
       setTeam(Array.isArray(res) ? res : []);
+      setCurrentUserRole(me?.role || "");
     } catch {
       setTeam([]);
     } finally {
@@ -128,7 +134,9 @@ export default function AdminTeam() {
     );
   };
 
-  const selectedRoleObj = ROLES.find((r) => r.value === selectedRole)!;
+  const isSuperAdmin = currentUserRole === "super_admin";
+  const visibleRoles = isSuperAdmin ? ROLES : ROLES.filter((r) => r.value !== "super_admin");
+  const selectedRoleObj = ROLES.find((r) => r.value === selectedRole) ?? ROLES[1];
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface2 }} edges={["top", "bottom"]}>
@@ -174,10 +182,10 @@ export default function AdminTeam() {
                 </View>
                 <Text style={s.memberMobile}>+91 {member.mobile}</Text>
 
-                {/* Role change — only for non super_admin */}
-                {member.role !== "super_admin" && (
+                {/* Role change — only for non super_admin members, or if current user is super_admin */}
+                {(member.role !== "super_admin" || isSuperAdmin) && member.role !== "super_admin" && (
                   <View style={s.roleRow}>
-                    {ROLES.map((r) => (
+                    {visibleRoles.map((r) => (
                       <TouchableOpacity
                         key={r.value}
                         style={[s.roleChip, member.role === r.value && { backgroundColor: r.color, borderColor: r.text + "40" }]}
@@ -253,7 +261,7 @@ export default function AdminTeam() {
 
             {showRolePicker && (
               <View style={modal.roleList}>
-                {ROLES.map((r) => (
+                {visibleRoles.map((r) => (
                   <TouchableOpacity
                     key={r.value}
                     style={[modal.roleOption, selectedRole === r.value && { backgroundColor: r.color + "40" }]}
