@@ -12,6 +12,38 @@ import { apiGet, apiPost } from "@/src/api";
 import { BackBar } from "@/src/components/StepBar";
 import EmptyState from "@/src/components/EmptyState";
 
+const DOCUMENT_OPTIONS = [
+  "Aadhaar Card",
+  "PAN Card",
+  "GST Certificate",
+  "Udyam Certificate",
+  "Bank Statement (6 months)",
+  "ITR (Income Tax Return)",
+  "Project Report",
+  "Quotation / Invoice",
+  "Partnership Deed",
+  "Property Papers",
+];
+
+const STATE_OPTIONS = [
+  "All India",
+  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
+  "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
+  "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
+  "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
+  "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+  "Delhi (NCT)", "Jammu & Kashmir", "Ladakh", "Puducherry", "Chandigarh",
+  "Andaman & Nicobar Islands", "Dadra & Nagar Haveli", "Lakshadweep",
+];
+
+const EMPTY_FORM = {
+  name: "", full_name: "", description: "",
+  max_funding: "", max_subsidy_percent: "", process: "",
+  eligibility: "", benefits: "", categories: "",
+  documents: [] as string[],
+  states: ["All India"] as string[],
+};
+
 export default function AdminSchemes() {
   const router = useRouter();
   const [items, setItems] = useState<any[]>([]);
@@ -19,14 +51,9 @@ export default function AdminSchemes() {
   const [toggling, setToggling] = useState<string | null>(null);
   const [role, setRole] = useState<string>("");
 
-  // Create scheme modal
   const [showCreate, setShowCreate] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    name: "", full_name: "", description: "",
-    max_funding: "", max_subsidy_percent: "", process: "",
-    eligibility: "", benefits: "", documents: "", categories: "", states: "All India",
-  });
+  const [form, setForm] = useState(EMPTY_FORM);
 
   const load = async () => {
     setLoading(true);
@@ -55,6 +82,25 @@ export default function AdminSchemes() {
     }
   };
 
+  const toggleDoc = (val: string) =>
+    setForm((f) => ({
+      ...f,
+      documents: f.documents.includes(val)
+        ? f.documents.filter((d) => d !== val)
+        : [...f.documents, val],
+    }));
+
+  const toggleState = (val: string) => {
+    setForm((f) => {
+      if (val === "All India") {
+        return { ...f, states: f.states.includes("All India") ? [] : ["All India"] };
+      }
+      const without = f.states.filter((s) => s !== "All India" && s !== val);
+      const next = f.states.includes(val) ? without : [...without, val];
+      return { ...f, states: next };
+    });
+  };
+
   const handleCreate = async () => {
     if (!form.name.trim() || !form.description.trim()) {
       Alert.alert("Required", "Name and description are required.");
@@ -71,12 +117,12 @@ export default function AdminSchemes() {
         process: form.process.trim(),
         eligibility: form.eligibility.split("\n").map((s) => s.trim()).filter(Boolean),
         benefits: form.benefits.split("\n").map((s) => s.trim()).filter(Boolean),
-        documents: form.documents.split("\n").map((s) => s.trim()).filter(Boolean),
+        documents: form.documents,
         categories: form.categories.split(",").map((s) => s.trim()).filter(Boolean),
-        states: form.states.split(",").map((s) => s.trim()).filter(Boolean),
+        states: form.states,
       });
       setShowCreate(false);
-      setForm({ name: "", full_name: "", description: "", max_funding: "", max_subsidy_percent: "", process: "", eligibility: "", benefits: "", documents: "", categories: "", states: "All India" });
+      setForm(EMPTY_FORM);
       await load();
     } catch (e: any) {
       Alert.alert("Error", e.message || "Could not create scheme.");
@@ -170,19 +216,34 @@ export default function AdminSchemes() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 480 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 500 }}>
               <View style={{ gap: 10 }}>
                 <Field label="Scheme Name *" placeholder="e.g. PMEGP" value={form.name} onChangeText={(v) => setForm((f) => ({ ...f, name: v }))} />
                 <Field label="Full Name" placeholder="e.g. Prime Minister's Employment Generation..." value={form.full_name} onChangeText={(v) => setForm((f) => ({ ...f, full_name: v }))} />
                 <Field label="Description *" placeholder="Short description of the scheme..." value={form.description} onChangeText={(v) => setForm((f) => ({ ...f, description: v }))} multiline />
                 <Field label="Max Funding (₹)" placeholder="e.g. 2500000" value={form.max_funding} onChangeText={(v) => setForm((f) => ({ ...f, max_funding: v }))} keyboardType="numeric" />
                 <Field label="Max Subsidy %" placeholder="e.g. 35" value={form.max_subsidy_percent} onChangeText={(v) => setForm((f) => ({ ...f, max_subsidy_percent: v }))} keyboardType="numeric" />
-                <Field label="Eligibility (one per line)" placeholder="Must be an Indian citizen&#10;Age 18-45..." value={form.eligibility} onChangeText={(v) => setForm((f) => ({ ...f, eligibility: v }))} multiline />
-                <Field label="Benefits (one per line)" placeholder="Up to 35% subsidy&#10;Collateral free..." value={form.benefits} onChangeText={(v) => setForm((f) => ({ ...f, benefits: v }))} multiline />
-                <Field label="Documents Required (one per line)" placeholder="Aadhaar Card&#10;PAN Card&#10;Bank Statement (6 months)..." value={form.documents} onChangeText={(v) => setForm((f) => ({ ...f, documents: v }))} multiline />
+                <Field label="Eligibility (one per line)" placeholder={"Must be an Indian citizen\nAge 18-45..."} value={form.eligibility} onChangeText={(v) => setForm((f) => ({ ...f, eligibility: v }))} multiline />
+                <Field label="Benefits (one per line)" placeholder={"Up to 35% subsidy\nCollateral free..."} value={form.benefits} onChangeText={(v) => setForm((f) => ({ ...f, benefits: v }))} multiline />
+
+                {/* Documents Required — multi-select chips */}
+                <MultiSelect
+                  label="Documents Required"
+                  options={DOCUMENT_OPTIONS}
+                  selected={form.documents}
+                  onToggle={toggleDoc}
+                />
+
                 <Field label="Process" placeholder="Application process description..." value={form.process} onChangeText={(v) => setForm((f) => ({ ...f, process: v }))} multiline />
                 <Field label="Categories (comma separated)" placeholder="MSME, Manufacturing, Startup" value={form.categories} onChangeText={(v) => setForm((f) => ({ ...f, categories: v }))} />
-                <Field label="States (comma separated)" placeholder="All India" value={form.states} onChangeText={(v) => setForm((f) => ({ ...f, states: v }))} />
+
+                {/* States — multi-select chips */}
+                <MultiSelect
+                  label="States"
+                  options={STATE_OPTIONS}
+                  selected={form.states}
+                  onToggle={toggleState}
+                />
               </View>
             </ScrollView>
 
@@ -215,6 +276,40 @@ function Field({ label, ...props }: { label: string; [key: string]: any }) {
   );
 }
 
+function MultiSelect({ label, options, selected, onToggle }: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onToggle: (val: string) => void;
+}) {
+  return (
+    <View>
+      <Text style={styles.fieldLabel}>
+        {label}
+        {selected.length > 0 && (
+          <Text style={{ color: colors.primaryDark, fontFamily: fonts.bold }}> · {selected.length} selected</Text>
+        )}
+      </Text>
+      <View style={styles.chipGrid}>
+        {options.map((opt) => {
+          const isSel = selected.includes(opt);
+          return (
+            <TouchableOpacity
+              key={opt}
+              style={[styles.chip, isSel && styles.chipSelected]}
+              onPress={() => onToggle(opt)}
+              activeOpacity={0.7}
+            >
+              {isSel && <CheckCircle2 size={11} color={colors.primaryDark} strokeWidth={2.5} />}
+              <Text style={[styles.chipText, isSel && styles.chipTextSelected]}>{opt}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   statsBar: { paddingHorizontal: spacing.md, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: "#FFF" },
   statsText: { fontSize: 12, fontFamily: fonts.medium, color: colors.textMuted },
@@ -241,8 +336,18 @@ const styles = StyleSheet.create({
   modalSheet: { backgroundColor: "#FFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.lg, paddingBottom: 36, gap: 14 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   modalTitle: { fontSize: 17, fontFamily: fonts.displayBold, color: colors.text },
-  fieldLabel: { fontSize: 11, fontFamily: fonts.bold, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 },
+  fieldLabel: { fontSize: 11, fontFamily: fonts.bold, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 },
   fieldInput: { borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.xl, paddingHorizontal: 14, paddingVertical: 10, fontSize: 13, fontFamily: fonts.regular, color: colors.text, backgroundColor: "#FFF" },
   saveBtn: { backgroundColor: colors.primary, borderRadius: radius.xl, paddingVertical: 13, alignItems: "center" },
   saveBtnText: { fontSize: 14, fontFamily: fonts.displayBold, color: "#FFF" },
+  chipGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: radius.pill, borderWidth: 1.5,
+    borderColor: colors.border, backgroundColor: colors.surface2,
+  },
+  chipSelected: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  chipText: { fontSize: 12, fontFamily: fonts.medium, color: colors.textMuted },
+  chipTextSelected: { color: colors.primaryDark, fontFamily: fonts.bold },
 });
