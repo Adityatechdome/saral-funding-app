@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, ScrollView, Modal, TextInput, Alert,
+  ActivityIndicator, ScrollView, Modal, TextInput, Alert, Linking, Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { X, User, Calendar, Clock, StickyNote, Phone } from "lucide-react-native";
+import { X, User, Calendar, Clock, StickyNote, Phone, Video, Copy } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, stageColor } from "@/src/theme";
 import { apiGet, apiPost } from "@/src/api";
@@ -175,6 +175,34 @@ export default function AdminConsultations() {
               onChangeText={setNotes}
               textAlignVertical="top"
             />
+
+            {editing?.meet_link && (
+              <View style={styles.meetBox}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <Video size={15} color={colors.primaryDark} strokeWidth={2} />
+                  <Text style={styles.fieldLabel}>Meeting Link</Text>
+                </View>
+                <Text style={styles.meetLinkText} numberOfLines={1}>{editing.meet_link}</Text>
+                <View style={styles.meetActions}>
+                  <TouchableOpacity
+                    style={styles.meetBtn}
+                    onPress={() => Share.share({ message: editing.meet_link, title: "Meeting Link" })}
+                    activeOpacity={0.8}
+                  >
+                    <Copy size={13} color={colors.primaryDark} strokeWidth={2.5} />
+                    <Text style={styles.meetBtnText}>Copy Link</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.meetBtn, styles.meetBtnJoin]}
+                    onPress={() => Linking.openURL(editing.meet_link)}
+                    activeOpacity={0.8}
+                  >
+                    <Video size={13} color="#FFF" strokeWidth={2.5} />
+                    <Text style={[styles.meetBtnText, { color: "#FFF" }]}>Join Meeting</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
 
             <Text style={styles.fieldLabel}>Update Status</Text>
             <View style={styles.statusGrid}>
@@ -370,4 +398,20 @@ const styles = StyleSheet.create({
     fontFamily: fonts.semiBold,
     textTransform: "capitalize",
   },
+  meetBox: {
+    backgroundColor: colors.primarySoft, borderRadius: radius.xl,
+    borderWidth: 1, borderColor: colors.primary, padding: 14, marginBottom: 16,
+  },
+  meetLinkText: {
+    fontSize: 11, fontFamily: fonts.medium, color: colors.primaryDark,
+    opacity: 0.8, marginBottom: 10,
+  },
+  meetActions: { flexDirection: "row", gap: 8 },
+  meetBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, paddingVertical: 9, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.primary, backgroundColor: "#FFF",
+  },
+  meetBtnJoin: { backgroundColor: colors.primary, borderColor: colors.primary },
+  meetBtnText: { fontSize: 12, fontFamily: fonts.semiBold, color: colors.primaryDark },
 });

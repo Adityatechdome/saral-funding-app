@@ -737,11 +737,15 @@ async def advisor_clear(user=Depends(get_current_user)):
 # ===========================================================================
 @api_router.post("/consultations")
 async def book_consultation(body: ConsultationIn, user=Depends(get_current_user)):
+    import secrets, re
     cid = str(uuid.uuid4())
+    meet_uid = re.sub(r'[^a-z0-9]', '', secrets.token_hex(6))
+    meet_link = f"https://meet.jit.si/SaralFunding{meet_uid}"
     doc = body.dict()
     doc.update({
         "id": cid, "user_id": user["id"],
         "status": "new", "assigned_to": None, "notes": doc.get("notes", ""),
+        "meet_link": meet_link,
         "created_at": now_iso(), "updated_at": now_iso(),
     })
     await db.consultations.insert_one(doc.copy())

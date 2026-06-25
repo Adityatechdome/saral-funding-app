@@ -17,4 +17,18 @@ export const CONSULT_TYPES = [
   "Business Loan Consultation",
   "Subsidy Consultation",
 ];
-export const TIME_SLOTS = ["10:00 AM", "11:30 AM", "1:00 PM", "3:00 PM", "4:30 PM", "6:00 PM"];
+function generateTimeSlots(): string[] {
+  const slots: string[] = [];
+  for (let h = 10; h <= 17; h++) {
+    const minutes = h === 17 ? [0] : [0, 30];
+    for (const m of minutes) {
+      const displayH = h > 12 ? h - 12 : h;
+      const ampm = h < 12 ? "AM" : "PM";
+      const min = m === 0 ? "00" : "30";
+      slots.push(`${displayH}:${min} ${ampm}`);
+    }
+  }
+  return slots;
+}
+export const TIME_SLOTS = generateTimeSlots();
+// 10:00 AM → 5:00 PM, every 30 min (15 slots)

@@ -8,13 +8,15 @@ import {
   RefreshControl,
   Linking,
   Image,
+  Modal,
+  Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   Bell, ChevronRight, Phone, Building2, TrendingUp, AlertCircle, Calendar, Zap, FolderOpen, Landmark,
   Users, Target, BarChart2, FolderOpen as FolderIcon, Settings, Shield, Percent, Eye, MessageSquare,
-  Banknote,
+  Banknote, Video, Copy, X,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR, elevation } from "@/src/theme";
@@ -96,6 +98,7 @@ export default function Dashboard() {
   const [data, setData] = useState<DashData | null>(null);
   const [user, setUser] = useState<any>(null);
   const [next, setNext] = useState<any>(null);
+  const [meetModal, setMeetModal] = useState(false);
   const [bankRec, setBankRec] = useState<BankRec | null>(null);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [alerts, setAlerts] = useState<any[]>([]);
@@ -448,18 +451,79 @@ export default function Dashboard() {
 
           {/* ── Upcoming Consultation ── */}
           {next && (
-            <View style={styles.card} testID="upcoming-card">
+            <TouchableOpacity style={styles.card} testID="upcoming-card" onPress={() => setMeetModal(true)} activeOpacity={0.85}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
                 <Calendar size={14} color={colors.primaryDark} strokeWidth={2} />
                 <Text style={styles.sectionLabel}>Upcoming Consultation</Text>
+                <ChevronRight size={13} color={colors.primaryDark} strokeWidth={2} style={{ marginLeft: "auto" }} />
               </View>
               <Text style={styles.consultType}>{next.consultation_type}</Text>
               <Text style={styles.consultMeta}>{next.date}  •  {next.time_slot}</Text>
-              <View style={styles.consultStatus}>
-                <Text style={styles.consultStatusText}>{next.status}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+                <View style={styles.consultStatus}>
+                  <Text style={styles.consultStatusText}>{next.status}</Text>
+                </View>
+                {next.meet_link && (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Video size={12} color={colors.primaryDark} strokeWidth={2} />
+                    <Text style={{ fontSize: 11, fontFamily: fonts.semiBold, color: colors.primaryDark }}>Meeting Ready</Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+          )}
+
+          {/* Meet link modal */}
+          <Modal visible={meetModal} transparent animationType="slide" onRequestClose={() => setMeetModal(false)}>
+            <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" }}>
+              <View style={{ backgroundColor: "#FFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, gap: 16 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <Text style={{ fontSize: 18, fontFamily: fonts.displayBold, color: colors.text }}>Consultation Details</Text>
+                  <TouchableOpacity onPress={() => setMeetModal(false)} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface2, alignItems: "center", justifyContent: "center" }}>
+                    <X size={16} color={colors.textMuted} strokeWidth={2} />
+                  </TouchableOpacity>
+                </View>
+                <View style={{ backgroundColor: colors.surface2, borderRadius: radius.xl, padding: 16, gap: 10 }}>
+                  <Text style={{ fontSize: 15, fontFamily: fonts.semiBold, color: colors.text }}>{next?.consultation_type}</Text>
+                  <Text style={{ fontSize: 13, fontFamily: fonts.regular, color: colors.textMuted }}>{next?.date}  •  {next?.time_slot}</Text>
+                  <View style={{ paddingHorizontal: 10, paddingVertical: 4, backgroundColor: colors.primarySoft, borderRadius: radius.pill, alignSelf: "flex-start" }}>
+                    <Text style={{ fontSize: 11, fontFamily: fonts.bold, color: colors.primaryDark, textTransform: "capitalize" }}>{next?.status}</Text>
+                  </View>
+                </View>
+                {next?.meet_link ? (
+                  <View style={{ backgroundColor: colors.primarySoft, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.primary, padding: 16, gap: 10 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Video size={16} color={colors.primaryDark} strokeWidth={2} />
+                      <Text style={{ fontSize: 14, fontFamily: fonts.displayBold, color: colors.primaryDark }}>Your Meeting Link</Text>
+                    </View>
+                    <Text style={{ fontSize: 11, fontFamily: fonts.medium, color: colors.primaryDark, opacity: 0.8 }} numberOfLines={1}>{next?.meet_link}</Text>
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <TouchableOpacity
+                        style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.primary, backgroundColor: "#FFF" }}
+                        onPress={() => Share.share({ message: next?.meet_link, title: "Meeting Link" })}
+                        activeOpacity={0.8}
+                      >
+                        <Copy size={14} color={colors.primaryDark} strokeWidth={2.5} />
+                        <Text style={{ fontSize: 13, fontFamily: fonts.semiBold, color: colors.primaryDark }}>Copy Link</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: radius.lg, backgroundColor: colors.primary }}
+                        onPress={() => { setMeetModal(false); Linking.openURL(next?.meet_link); }}
+                        activeOpacity={0.8}
+                      >
+                        <Video size={14} color="#FFF" strokeWidth={2.5} />
+                        <Text style={{ fontSize: 13, fontFamily: fonts.displayBold, color: "#FFF" }}>Join Meeting</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ backgroundColor: colors.surface2, borderRadius: radius.xl, padding: 16, alignItems: "center" }}>
+                    <Text style={{ fontSize: 13, fontFamily: fonts.regular, color: colors.textMuted, textAlign: "center" }}>Meeting link will be shared by your advisor before the session.</Text>
+                  </View>
+                )}
               </View>
             </View>
-          )}
+          </Modal>
 
           {/* ── Applications prompt ── */}
           <View style={styles.card}>
