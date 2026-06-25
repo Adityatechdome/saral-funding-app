@@ -90,7 +90,7 @@ export default function Otp() {
       const step = r.user.onboarding_step;
       if (step === "profile") router.replace("/onboarding/profile");
       else if (step === "business") router.replace("/onboarding/business");
-      else if (step === "assessment") router.replace("/onboarding/assessment");
+      else if (step === "assessment") router.replace("/onboarding/business");
       else router.replace("/(tabs)");
     } catch (e: any) {
       setErr(e.message || "Invalid OTP. Please try again.");

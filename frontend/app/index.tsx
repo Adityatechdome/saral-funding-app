@@ -18,7 +18,7 @@ export default function Splash() {
         const me = await apiGet<{ onboarding_step?: string }>("/auth/me");
         if (me.onboarding_step === "profile") router.replace("/onboarding/profile");
         else if (me.onboarding_step === "business") router.replace("/onboarding/business");
-        else if (me.onboarding_step === "assessment") router.replace("/onboarding/assessment");
+        else if (me.onboarding_step === "assessment") router.replace("/onboarding/business");
         else router.replace("/(tabs)");
       } catch {
         router.replace("/login");

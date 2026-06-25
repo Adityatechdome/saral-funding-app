@@ -14,7 +14,7 @@ import { CheckCircle2, Circle, Building2, Sprout } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiPost } from "@/src/api";
-import { INDUSTRIES } from "@/src/constants";
+import { INDUSTRIES, INDIAN_STATES } from "@/src/constants";
 import Picker from "@/src/components/Picker";
 import Input from "@/src/components/ui/Input";
 import Button from "@/src/components/ui/Button";
@@ -41,7 +41,7 @@ function ToggleCard({
       activeOpacity={0.8}
     >
       <View style={styles.toggleLeft}>
-        <View style={[styles.toggleIcon, value && styles.toggleIconOn]}>
+        <View style={styles.toggleIcon}>
           {value
             ? <CheckCircle2 size={16} color={colors.primaryDark} strokeWidth={2.5} />
             : <Circle size={16} color={colors.textDim} strokeWidth={2} />
@@ -63,11 +63,14 @@ export default function BusinessScreen() {
   const [funding, setFunding] = useState("");
   const [turnover, setTurnover] = useState("");
   const [employees, setEmployees] = useState("");
+  const [location, setLocation] = useState("");
   const [gst, setGst] = useState(false);
   const [udyam, setUdyam] = useState(false);
+  const [woman, setWoman] = useState(false);
+  const [loans, setLoans] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const valid = industry && funding;
+  const valid = industry && funding && location;
 
   const fundingLakh = funding
     ? `≈ ₹${(Number(funding) / 100000).toFixed(1)} Lakhs`
@@ -77,16 +80,28 @@ export default function BusinessScreen() {
     if (!valid) return;
     setLoading(true);
     try {
-      await apiPost("/business-profile", {
-        business_stage: stage,
-        industry,
-        funding_required: Number(funding || 0),
-        annual_turnover: Number(turnover || 0),
-        employees: Number(employees || 0),
-        gst_available: gst,
-        udyam_available: udyam,
-      });
-      router.replace("/onboarding/assessment");
+      await Promise.all([
+        apiPost("/business-profile", {
+          business_stage: stage,
+          industry,
+          funding_required: Number(funding || 0),
+          annual_turnover: Number(turnover || 0),
+          employees: Number(employees || 0),
+          gst_available: gst,
+          udyam_available: udyam,
+        }),
+        apiPost("/funding-assessment", {
+          business_type: industry,
+          funding_requirement: Number(funding || 0),
+          business_location: location,
+          existing_business: stage === "existing",
+          woman_entrepreneur: woman,
+          gst_registration: gst,
+          udyam_registration: udyam,
+          existing_loans: loans,
+        }),
+      ]);
+      router.replace("/documents");
     } finally {
       setLoading(false);
     }
@@ -101,7 +116,7 @@ export default function BusinessScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <StepBar step={2} total={3} labels={["Your Profile", "Business Details", "Quick Assessment"]} />
+          <StepBar step={2} total={2} labels={["Your Profile", "Business Details"]} />
 
           <Text style={styles.heading}>About your business</Text>
           <Text style={styles.subheading}>
@@ -163,6 +178,14 @@ export default function BusinessScreen() {
             helper="Including yourself"
           />
 
+          <Picker
+            label="Business Location (State)"
+            testID="biz-state"
+            value={location}
+            options={INDIAN_STATES}
+            onChange={setLocation}
+          />
+
           {/* Registration status */}
           <Text style={styles.fieldLabel}>Registration Status</Text>
           <View style={styles.toggleGrid}>
@@ -184,12 +207,31 @@ export default function BusinessScreen() {
           <Text style={styles.hintNote}>
             Registered businesses get access to more schemes and higher subsidy amounts.
           </Text>
+
+          {/* Additional details */}
+          <Text style={styles.fieldLabel}>Additional Details</Text>
+          <View style={styles.toggleGrid}>
+            <ToggleCard
+              testID="woman"
+              label="Woman Entrepreneur"
+              sublabel="Extra 10–15% subsidy"
+              value={woman}
+              onChange={setWoman}
+            />
+            <ToggleCard
+              testID="loans"
+              label="Existing Loans"
+              sublabel="Any active loans"
+              value={loans}
+              onChange={setLoans}
+            />
+          </View>
         </ScrollView>
 
         <View style={styles.footer}>
           <Button
             testID="business-save"
-            label={loading ? "Saving…" : "Save & Continue"}
+            label={loading ? "Setting up your profile…" : "Save & Continue"}
             onPress={onSave}
             disabled={!valid}
             loading={loading}
@@ -284,7 +326,6 @@ const styles = StyleSheet.create({
   toggleIcon: {
     marginTop: 1,
   },
-  toggleIconOn: {},
   toggleLabel: {
     fontSize: 13,
     fontFamily: fonts.semiBold,
