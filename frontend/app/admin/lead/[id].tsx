@@ -9,7 +9,7 @@ import {
   User, Phone, MapPin, Building2, DollarSign, StickyNote,
   Calendar, Clock, ArrowRight, CheckCircle2, AlertCircle,
   FileText, ChevronDown, X, Tag, Upload, Star, ExternalLink,
-  Plus, Trash2, ChevronRight,
+  Plus, Trash2, ChevronRight, Bell, Send,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR, stageColor } from "@/src/theme";
@@ -136,6 +136,44 @@ export default function LeadDetail() {
   const [stageNote, setStageNote] = useState("");
   const [selectedStage, setSelectedStage] = useState("");
   const [updatingStage, setUpdatingStage] = useState(false);
+
+  // Notification
+  const [notifTitle, setNotifTitle] = useState("");
+  const [notifBody, setNotifBody] = useState("");
+  const [sendingNotif, setSendingNotif] = useState(false);
+
+  const NOTIF_TEMPLATES = [
+    { label: "KYC Pending", title: "KYC Pending", body: "Your KYC is pending. Please complete it for faster processing." },
+    { label: "PAN Missing", title: "Document Missing", body: "Your PAN Card is missing. Please upload it to continue your application." },
+    { label: "Aadhaar Missing", title: "Document Missing", body: "Your Aadhaar Card is missing. Kindly upload it to proceed." },
+    { label: "Application Update", title: "Application Update", body: "Your funding application has been updated. Please check your status." },
+    { label: "Call Scheduled", title: "Call Scheduled", body: "Our advisor has scheduled a call with you. Please keep your phone handy." },
+  ];
+
+  const sendNotification = async () => {
+    if (!notifTitle.trim() || !notifBody.trim()) {
+      Alert.alert("Missing Fields", "Please enter both a title and message.");
+      return;
+    }
+    const userId = data?.user?.id || data?.user_id;
+    if (!userId) return;
+    setSendingNotif(true);
+    try {
+      await apiPost("/admin/notifications", {
+        title: notifTitle.trim(),
+        body: notifBody.trim(),
+        type: "platform",
+        target_user_ids: [userId],
+      });
+      setNotifTitle("");
+      setNotifBody("");
+      Alert.alert("Sent", "Notification delivered to the user.");
+    } catch {
+      Alert.alert("Error", "Failed to send notification.");
+    } finally {
+      setSendingNotif(false);
+    }
+  };
 
   const load = async () => {
     try {
@@ -519,6 +557,53 @@ export default function LeadDetail() {
           )}
         </SectionCard>
 
+        {/* Send Notification */}
+        <SectionCard title="Send Notification">
+          <Text style={styles.notifHint}>Quick templates</Text>
+          <View style={styles.templateRow}>
+            {NOTIF_TEMPLATES.map((t) => (
+              <TouchableOpacity
+                key={t.label}
+                style={styles.templateChip}
+                onPress={() => { setNotifTitle(t.title); setNotifBody(t.body); }}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.templateChipText}>{t.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TextInput
+            style={styles.notifInput}
+            value={notifTitle}
+            onChangeText={setNotifTitle}
+            placeholder="Notification title…"
+            placeholderTextColor={colors.textPlaceholder}
+          />
+          <TextInput
+            style={[styles.notifInput, { minHeight: 70, textAlignVertical: "top" }]}
+            value={notifBody}
+            onChangeText={setNotifBody}
+            placeholder="Write your message to the user…"
+            placeholderTextColor={colors.textPlaceholder}
+            multiline
+            numberOfLines={3}
+          />
+          <TouchableOpacity
+            style={[styles.notifSendBtn, sendingNotif && { opacity: 0.6 }]}
+            onPress={sendNotification}
+            disabled={sendingNotif}
+            activeOpacity={0.85}
+          >
+            {sendingNotif
+              ? <ActivityIndicator color="#FFF" size="small" />
+              : <>
+                  <Send size={14} color="#FFF" strokeWidth={2.5} />
+                  <Text style={styles.notifSendText}>Send Notification</Text>
+                </>
+            }
+          </TouchableOpacity>
+        </SectionCard>
+
         {/* Consultation History */}
         {consultations.length > 0 && (
           <SectionCard title={`Consultation History (${consultations.length})`}>
@@ -896,6 +981,25 @@ const styles = StyleSheet.create({
     paddingVertical: 10, justifyContent: "center", marginTop: 12,
   },
   assignBtnText: { fontSize: 13, fontFamily: fonts.displayBold, color: "#FFF" },
+
+  // Send Notification
+  notifHint: { fontSize: 11, fontFamily: fonts.medium, color: colors.textDim, marginBottom: 8 },
+  templateRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 },
+  templateChip: {
+    paddingHorizontal: 11, paddingVertical: 6, borderRadius: radius.pill,
+    borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primarySoft,
+  },
+  templateChipText: { fontSize: 11, fontFamily: fonts.semiBold, color: colors.primaryDark },
+  notifInput: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.xl,
+    padding: 12, fontSize: 14, fontFamily: fonts.regular,
+    color: colors.text, backgroundColor: colors.surface2, marginBottom: 10,
+  },
+  notifSendBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+    backgroundColor: colors.primary, borderRadius: radius.xl, paddingVertical: 12,
+  },
+  notifSendText: { fontSize: 14, fontFamily: fonts.displayBold, color: "#FFF" },
 
   // Modal list items
   listItem: {
