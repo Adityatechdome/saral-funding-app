@@ -6,11 +6,14 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
+  Share,
+  Linking,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import Animated, { FadeIn, SlideInUp } from "react-native-reanimated";
-import { CheckCircle2, Calendar, Clock, Phone, ChevronRight } from "lucide-react-native";
+import { CheckCircle2, Calendar, Clock, Phone, ChevronRight, Video, Copy } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts } from "@/src/theme";
 import { apiPost } from "@/src/api";
@@ -85,6 +88,34 @@ function ConfirmationView({ done, onBack }: { done: any; onBack: () => void }) {
             </View>
           </View>
         </Animated.View>
+
+        {done.meet_link && (
+          <Animated.View entering={SlideInUp.delay(450).duration(400)} style={confirmStyles.meetCard}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <Video size={16} color={colors.primaryDark} strokeWidth={2} />
+              <Text style={confirmStyles.meetTitle}>Your Meeting Link</Text>
+            </View>
+            <Text style={confirmStyles.meetLink} numberOfLines={1}>{done.meet_link}</Text>
+            <View style={confirmStyles.meetActions}>
+              <TouchableOpacity
+                style={confirmStyles.meetBtn}
+                onPress={() => Share.share({ message: done.meet_link, title: "Meeting Link" })}
+                activeOpacity={0.8}
+              >
+                <Copy size={14} color={colors.primaryDark} strokeWidth={2.5} />
+                <Text style={confirmStyles.meetBtnText}>Copy Link</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[confirmStyles.meetBtn, confirmStyles.meetBtnJoin]}
+                onPress={() => Linking.openURL(done.meet_link)}
+                activeOpacity={0.8}
+              >
+                <Video size={14} color="#FFF" strokeWidth={2.5} />
+                <Text style={[confirmStyles.meetBtnText, { color: "#FFF" }]}>Join Meeting</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        )}
 
         <TouchableOpacity
           testID="back-to-home"
@@ -167,6 +198,21 @@ const confirmStyles = StyleSheet.create({
     marginTop: 2,
   },
   divider: { height: 1, backgroundColor: colors.border },
+  meetCard: {
+    width: "100%", backgroundColor: colors.primarySoft,
+    borderRadius: radius.xxl, borderWidth: 1, borderColor: colors.primary,
+    padding: spacing.md, marginBottom: spacing.lg,
+  },
+  meetTitle: { fontSize: 14, fontFamily: fonts.displayBold, color: colors.primaryDark },
+  meetLink: { fontSize: 11, fontFamily: fonts.medium, color: colors.primaryDark, marginBottom: 12, opacity: 0.8 },
+  meetActions: { flexDirection: "row", gap: 8 },
+  meetBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, paddingVertical: 9, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.primary, backgroundColor: "#FFF",
+  },
+  meetBtnJoin: { backgroundColor: colors.primary, borderColor: colors.primary },
+  meetBtnText: { fontSize: 13, fontFamily: fonts.semiBold, color: colors.primaryDark },
   cta: {
     flexDirection: "row",
     alignItems: "center",

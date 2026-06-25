@@ -12,7 +12,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / '.env', override=True)
 
 from schemes_seed import SCHEMES_SEED
 from banks_seed import BANKS_SEED
@@ -39,6 +39,60 @@ db = client[os.environ['DB_NAME']]
 
 app = FastAPI(title="Saral Funding API", version="1.0.0", docs_url=None, redoc_url=None)
 api_router = APIRouter(prefix="/api")
+
+
+@app.get("/")
+async def root():
+    return {
+        "service": "Saral Funding API",
+        "version": "1.0.0",
+        "status": "running",
+        "docs": "/health for full health check"
+    }
+
+
+@app.get("/health")
+async def health_check():
+    # Check MongoDB
+    try:
+        await db.command("ping")
+        mongo_status = "connected"
+        collections = await db.list_collection_names()
+        counts = {
+            "users": await db.users.count_documents({}),
+            "schemes": await db.schemes.count_documents({}),
+            "banks": await db.banks.count_documents({}),
+            "leads": await db.leads.count_documents({}),
+            "consultations": await db.consultations.count_documents({}),
+        }
+    except Exception as e:
+        mongo_status = f"error: {str(e)}"
+        collections = []
+        counts = {}
+
+    # Check optional services
+    twilio_configured = bool(os.environ.get("MSG91_API_KEY"))
+    openai_configured = bool(os.environ.get("OPENAI_API_KEY"))
+    azure_configured = bool(os.environ.get("AZURE_ACCOUNT_NAME") and os.environ.get("AZURE_SAS_TOKEN"))
+    ghl_configured = bool(os.environ.get("GHL_API_KEY"))
+    setu_configured = bool(os.environ.get("SETU_CLIENT_ID"))
+
+    return {
+        "status": "ok" if mongo_status == "connected" else "degraded",
+        "database": {
+            "mongodb": mongo_status,
+            "collections": len(collections),
+            "counts": counts,
+        },
+        "services": {
+            "msg91_otp": "configured" if twilio_configured else "mock_mode (OTP=123456)",
+            "openai": "configured" if openai_configured else "not configured (fallback active)",
+            "azure_storage": "configured" if azure_configured else "not configured",
+            "ghl_crm": "configured" if ghl_configured else "not configured",
+            "setu_aa": "configured" if setu_configured else "not configured",
+        },
+        "environment": os.environ.get("DB_NAME", "saral_funding"),
+    }
 
 # ---- Security middleware ----
 ALLOWED_ORIGINS = os.environ.get(
@@ -518,7 +572,54 @@ async def recompute(user=Depends(get_current_user)):
 # ===========================================================================
 @api_router.get("/banks")
 async def list_banks():
-    return await db.banks.find({}, {"_id": 0}).to_list(50)
+    return await db.banks.find({}, {"_id": 0}).to_list(200)
+
+
+class CreateBankRequest(BaseModel):
+    name: str
+    short_name: Optional[str] = ""
+    type: Optional[str] = "Public"
+    interest_min: Optional[float] = 0.0
+    interest_max: Optional[float] = 0.0
+    max_funding: Optional[int] = 0
+    processing_fee_percent: Optional[float] = 0.0
+    min_credit_score: Optional[int] = 0
+    collateral_required: Optional[bool] = False
+    description: Optional[str] = ""
+    why: Optional[str] = ""
+    supports: Optional[List[str]] = []
+    industries: Optional[List[str]] = []
+    states: Optional[List[str]] = ["All India"]
+    min_turnover: Optional[int] = 0
+
+
+@api_router.post("/admin/banks")
+async def admin_create_bank(req: CreateBankRequest, admin=Depends(require_admin)):
+    """Super admin creates a new bank."""
+    if admin.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Only super_admin can create banks.")
+    bank_id = req.name.lower().replace(" ", "-").replace(".", "") + "-" + str(uuid.uuid4())[:6]
+    doc = {
+        "id": bank_id,
+        "name": req.name.strip(),
+        "short_name": req.short_name or req.name.strip(),
+        "type": req.type or "Public",
+        "interest_min": req.interest_min or 0.0,
+        "interest_max": req.interest_max or 0.0,
+        "max_funding": req.max_funding or 0,
+        "processing_fee_percent": req.processing_fee_percent or 0.0,
+        "min_credit_score": req.min_credit_score or 0,
+        "collateral_required": req.collateral_required or False,
+        "description": req.description or "",
+        "why": req.why or "",
+        "supports": req.supports or [],
+        "industries": req.industries or [],
+        "states": req.states or ["All India"],
+        "min_turnover": req.min_turnover or 0,
+        "created_at": now_iso(),
+    }
+    await db.banks.insert_one(doc)
+    return {k: v for k, v in doc.items() if k != "_id"}
 
 
 @api_router.get("/banks/{bank_id}")
@@ -636,11 +737,15 @@ async def advisor_clear(user=Depends(get_current_user)):
 # ===========================================================================
 @api_router.post("/consultations")
 async def book_consultation(body: ConsultationIn, user=Depends(get_current_user)):
+    import secrets, re
     cid = str(uuid.uuid4())
+    meet_uid = re.sub(r'[^a-z0-9]', '', secrets.token_hex(6))
+    meet_link = f"https://meet.jit.si/SaralFunding{meet_uid}"
     doc = body.dict()
     doc.update({
         "id": cid, "user_id": user["id"],
         "status": "new", "assigned_to": None, "notes": doc.get("notes", ""),
+        "meet_link": meet_link,
         "created_at": now_iso(), "updated_at": now_iso(),
     })
     await db.consultations.insert_one(doc.copy())
@@ -892,6 +997,81 @@ async def admin_enable_scheme(sid: str, admin=Depends(require_admin)):
 async def admin_delete_scheme(sid: str, admin=Depends(require_super_admin)):
     await db.schemes.delete_one({"id": sid})
     return {"ok": True}
+
+
+@api_router.get("/admin/schemes/{sid}/assigned-users")
+async def admin_scheme_assigned_users(sid: str, admin=Depends(require_admin)):
+    """List all users assigned to a specific scheme."""
+    apps = await db.scheme_applications.find({"scheme_id": sid}, {"_id": 0}).to_list(500)
+    if not apps:
+        return {"scheme_id": sid, "total": 0, "users": []}
+    user_ids = [a["user_id"] for a in apps]
+    users = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "full_name": 1, "mobile": 1, "state": 1}).to_list(500)
+    by_id = {u["id"]: u for u in users}
+    result = []
+    for app in apps:
+        result.append({
+            "application_id": app["id"],
+            "user_id": app["user_id"],
+            "user": by_id.get(app["user_id"], {}),
+            "stage": app["stage"],
+            "assigned_at": app.get("assigned_at"),
+            "notes": app.get("notes", ""),
+        })
+    return {"scheme_id": sid, "total": len(result), "users": result}
+
+
+class BulkAssignRequest(BaseModel):
+    mode: str  # "all" or "selected"
+    user_ids: Optional[List[str]] = None
+    notes: Optional[str] = None
+
+
+@api_router.post("/admin/schemes/{sid}/assign")
+async def admin_bulk_assign_scheme(sid: str, req: BulkAssignRequest, admin=Depends(require_admin)):
+    """Bulk assign a scheme to all users or selected users."""
+    scheme = await db.schemes.find_one({"id": sid}, {"_id": 0})
+    if not scheme:
+        raise HTTPException(status_code=404, detail="Scheme not found.")
+    if req.mode not in ("all", "selected"):
+        raise HTTPException(status_code=400, detail="mode must be 'all' or 'selected'")
+
+    if req.mode == "all":
+        users = await db.users.find({"role": "user"}, {"_id": 0, "id": 1}).to_list(5000)
+        target_ids = [u["id"] for u in users]
+    else:
+        if not req.user_ids:
+            raise HTTPException(status_code=400, detail="user_ids required for selected mode")
+        target_ids = req.user_ids
+
+    existing = await db.scheme_applications.find(
+        {"scheme_id": sid, "user_id": {"$in": target_ids}}, {"_id": 0, "user_id": 1}
+    ).to_list(5000)
+    already_assigned = {e["user_id"] for e in existing}
+    new_ids = [uid for uid in target_ids if uid not in already_assigned]
+
+    now = now_iso()
+    docs = []
+    for uid in new_ids:
+        docs.append({
+            "id": str(uuid.uuid4()),
+            "user_id": uid,
+            "scheme_id": sid,
+            "scheme_name": scheme["name"],
+            "bank_id": None,
+            "bank_name": None,
+            "stage": "scheme_identified",
+            "stage_history": [{"stage": "scheme_identified", "note": req.notes or "Bulk assigned by admin", "updated_by": admin.get("full_name", "Admin"), "updated_at": now}],
+            "assigned_by": admin["id"],
+            "assigned_at": now,
+            "notes": req.notes or "",
+            "created_at": now,
+            "updated_at": now,
+        })
+    if docs:
+        await db.scheme_applications.insert_many([{**d, "_id": d["id"]} for d in docs])
+
+    return {"assigned": len(docs), "skipped": len(already_assigned), "total_targeted": len(target_ids)}
 
 
 @api_router.get("/admin/consultations")
@@ -1231,6 +1411,95 @@ async def admin_delete_application(app_id: str, admin=Depends(require_admin)):
     return {"ok": True}
 
 
+# ===========================================================================
+# BANK ASSIGNMENTS  (admin assigns banks to users)
+# ===========================================================================
+
+class BankAssignRequest(BaseModel):
+    mode: str  # "all" or "selected"
+    user_ids: Optional[List[str]] = None
+    notes: Optional[str] = None
+
+
+@api_router.get("/admin/banks/{bid}/assigned-users")
+async def admin_bank_assigned_users(bid: str, admin=Depends(require_admin)):
+    """List all users assigned to a specific bank."""
+    assignments = await db.bank_assignments.find({"bank_id": bid}, {"_id": 0}).to_list(500)
+    if not assignments:
+        return {"bank_id": bid, "total": 0, "users": []}
+    user_ids = [a["user_id"] for a in assignments]
+    users = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "full_name": 1, "mobile": 1, "state": 1}).to_list(500)
+    by_id = {u["id"]: u for u in users}
+    result = []
+    for a in assignments:
+        result.append({
+            "assignment_id": a["id"],
+            "user_id": a["user_id"],
+            "user": by_id.get(a["user_id"], {}),
+            "assigned_at": a.get("assigned_at"),
+            "notes": a.get("notes", ""),
+        })
+    return {"bank_id": bid, "total": len(result), "users": result}
+
+
+@api_router.post("/admin/banks/{bid}/assign")
+async def admin_bulk_assign_bank(bid: str, req: BankAssignRequest, admin=Depends(require_admin)):
+    """Bulk assign a bank to all users or selected users."""
+    bank = await db.banks.find_one({"id": bid}, {"_id": 0})
+    if not bank:
+        raise HTTPException(status_code=404, detail="Bank not found.")
+    if req.mode not in ("all", "selected"):
+        raise HTTPException(status_code=400, detail="mode must be 'all' or 'selected'")
+
+    if req.mode == "all":
+        users = await db.users.find({"role": "user"}, {"_id": 0, "id": 1}).to_list(5000)
+        target_ids = [u["id"] for u in users]
+    else:
+        if not req.user_ids:
+            raise HTTPException(status_code=400, detail="user_ids required for selected mode")
+        target_ids = req.user_ids
+
+    existing = await db.bank_assignments.find(
+        {"bank_id": bid, "user_id": {"$in": target_ids}}, {"_id": 0, "user_id": 1}
+    ).to_list(5000)
+    already_assigned = {e["user_id"] for e in existing}
+    new_ids = [uid for uid in target_ids if uid not in already_assigned]
+
+    now = now_iso()
+    docs = []
+    for uid in new_ids:
+        docs.append({
+            "id": str(uuid.uuid4()),
+            "user_id": uid,
+            "bank_id": bid,
+            "bank_name": bank["name"],
+            "bank_short_name": bank.get("short_name", ""),
+            "assigned_by": admin["id"],
+            "assigned_at": now,
+            "notes": req.notes or "",
+            "created_at": now,
+        })
+    if docs:
+        await db.bank_assignments.insert_many(docs)
+    return {"assigned": len(docs), "skipped": len(already_assigned)}
+
+
+@api_router.get("/admin/users/{uid}/bank-assignments")
+async def admin_list_user_bank_assignments(uid: str, admin=Depends(require_admin)):
+    """List banks assigned to a user."""
+    assignments = await db.bank_assignments.find({"user_id": uid}, {"_id": 0}).to_list(100)
+    return assignments
+
+
+@api_router.delete("/admin/bank-assignments/{assignment_id}")
+async def admin_delete_bank_assignment(assignment_id: str, admin=Depends(require_admin)):
+    """Admin removes a bank assignment."""
+    result = await db.bank_assignments.delete_one({"id": assignment_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Assignment not found.")
+    return {"ok": True}
+
+
 @api_router.get("/my/scheme-applications")
 async def my_scheme_applications(user=Depends(get_current_user)):
     """User fetches all their scheme application trackers."""
@@ -1246,6 +1515,22 @@ async def my_scheme_applications(user=Depends(get_current_user)):
             app["stage_index"] = 0
         app["total_stages"] = len(APPLICATION_STAGES) - 1  # exclude rejected
     return apps
+
+
+@api_router.get("/my/bank-assignments")
+async def my_bank_assignments(user=Depends(get_current_user)):
+    """User fetches all banks assigned to them by admin, enriched with full bank details."""
+    assignments = await db.bank_assignments.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("created_at", 1).to_list(100)
+    if not assignments:
+        return []
+    bank_ids = [a["bank_id"] for a in assignments]
+    banks = await db.banks.find({"id": {"$in": bank_ids}}, {"_id": 0}).to_list(100)
+    banks_by_id = {b["id"]: b for b in banks}
+    for a in assignments:
+        a["bank"] = banks_by_id.get(a["bank_id"], {})
+    return assignments
 
 
 # ===========================================================================
@@ -1317,20 +1602,27 @@ async def seed_db():
         await db.banks.update_one({"id": b["id"]}, {"$setOnInsert": b.copy()}, upsert=True)
     logging.info(f"Upserted {len(BANKS_SEED)} banks")
     # seed super admin (idempotent)
-    admin_mobile = "9000000000"
+    # Must use E.164 format (+91...) to match what sanitise_mobile() produces at login
+    admin_mobile = os.environ.get("SUPER_ADMIN_MOBILE", "9000000000").strip()
+    if not admin_mobile.startswith("+"):
+        admin_mobile = "+91" + admin_mobile
+    # Fix any existing record that was stored without +91
+    await db.users.update_many(
+        {"mobile": admin_mobile.lstrip("+91"), "role": "super_admin"},
+        {"$set": {"mobile": admin_mobile, "role": "super_admin"}}
+    )
     existing_admin = await db.users.find_one({"mobile": admin_mobile})
     if not existing_admin:
         await db.users.insert_one({
             "id": str(uuid.uuid4()), "mobile": admin_mobile, "language": "en",
-            "full_name": "Super Admin", "state": "Gujarat", "district": "Surat",
-            "gender": "Male", "age": 30, "category": "General",
-            "onboarding_step": "done", "role": "super_admin",
+            "full_name": "Super Admin", "onboarding_step": "done", "role": "super_admin",
             "created_at": now_iso(), "updated_at": now_iso(),
         })
         logging.info(f"Seeded super admin (mobile={admin_mobile})")
     else:
-        # ensure role is super_admin
+        # ensure role is always super_admin even if accidentally demoted
         await db.users.update_one({"mobile": admin_mobile}, {"$set": {"role": "super_admin"}})
+        logging.info(f"Super admin verified (mobile={admin_mobile})")
 
 
 
@@ -1401,6 +1693,7 @@ async def setu_aa_status(user=Depends(get_current_user)):
 
 class DocumentStatusIn(BaseModel):
     status: str  # "verified" | "rejected"
+    reject_reason: Optional[str] = None
 
 class AdminRecommendationIn(BaseModel):
     schemes: List[str] = []
@@ -1479,6 +1772,30 @@ async def get_document_download_url(doc_id: str, request: Request, user=Depends(
     return {"url": sas_url, "expires_in": 300}
 
 
+@api_router.get("/admin/documents")
+async def admin_list_all_documents(
+    status: Optional[str] = None,
+    page: int = 1,
+    limit: int = 30,
+    admin=Depends(require_admin),
+):
+    query: dict = {}
+    if status and status in ("pending", "verified", "rejected"):
+        query["status"] = status
+    skip = (max(page, 1) - 1) * limit
+    total = await db.documents.count_documents(query)
+    docs = await db.documents.find(query, {"_id": 0, "blob_name": 0}).sort("created_at", -1).skip(skip).to_list(limit)
+    # Attach user names
+    user_ids = list({d["user_id"] for d in docs if d.get("user_id")})
+    users_map = {}
+    if user_ids:
+        async for u in db.users.find({"id": {"$in": user_ids}}, {"id": 1, "full_name": 1, "mobile": 1}):
+            users_map[u["id"]] = {"full_name": u.get("full_name", "—"), "mobile": u.get("mobile", "")}
+    for d in docs:
+        d["user"] = users_map.get(d.get("user_id"), {})
+    return {"items": docs, "total": total, "page": page, "limit": limit, "pages": max(1, (total + limit - 1) // limit)}
+
+
 @api_router.get("/admin/users/{user_id}/documents")
 async def admin_list_user_documents(user_id: str, admin=Depends(require_admin)):
     docs = await db.documents.find({"user_id": user_id}, {"_id": 0}).to_list(100)
@@ -1489,9 +1806,14 @@ async def admin_list_user_documents(user_id: str, admin=Depends(require_admin)):
 async def admin_update_doc_status(doc_id: str, payload: DocumentStatusIn, admin=Depends(require_admin)):
     if payload.status not in ("verified", "rejected"):
         raise HTTPException(status_code=400, detail="status must be verified or rejected")
+    update_fields: dict = {"status": payload.status, "updated_at": now_iso()}
+    if payload.status == "rejected" and payload.reject_reason:
+        update_fields["reject_reason"] = payload.reject_reason.strip()
+    elif payload.status == "verified":
+        update_fields["reject_reason"] = None
     result = await db.documents.find_one_and_update(
         {"id": doc_id},
-        {"$set": {"status": payload.status, "updated_at": now_iso()}},
+        {"$set": update_fields},
         return_document=True,
     )
     if not result:
@@ -1506,7 +1828,8 @@ async def admin_update_doc_status(doc_id: str, payload: DocumentStatusIn, admin=
         if payload.status == "verified":
             send_push_to_user(doc_owner, "Document Verified ✅", f"Your {result.get('doc_type')} has been verified by our team.")
         else:
-            send_push_to_user(doc_owner, "Document Rejected ❌", f"Your {result.get('doc_type')} was rejected. Please re-upload a clearer copy.")
+            reason_suffix = f" Reason: {payload.reject_reason}" if payload.reject_reason else " Please re-upload a clearer copy."
+            send_push_to_user(doc_owner, "Document Rejected ❌", f"Your {result.get('doc_type')} was rejected.{reason_suffix}")
         # Audit log
         action = AuditAction.DOCUMENT_VERIFY if payload.status == "verified" else AuditAction.DOCUMENT_REJECT
         await audit_log(db, action, user_id=admin["id"], role=admin.get("role"),
@@ -1628,6 +1951,13 @@ async def get_my_recommendations(user=Depends(get_current_user)):
 
 app.include_router(api_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# Serve local uploads in dev (no-op when Azure is configured)
+import pathlib as _pathlib
+from fastapi.staticfiles import StaticFiles as _StaticFiles
+_uploads_dir = _pathlib.Path("uploads")
+_uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", _StaticFiles(directory=str(_uploads_dir)), name="uploads")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 

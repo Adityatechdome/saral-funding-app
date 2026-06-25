@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Platform } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { CheckCircle2 } from "lucide-react-native";
@@ -23,9 +23,7 @@ export default function LanguageScreen() {
     <SafeAreaView style={styles.container} edges={["top", "bottom"]} testID="language-screen">
       {/* Brand header */}
       <View style={styles.header}>
-        <View style={styles.logoMark}>
-          <Text style={styles.logoText}>S</Text>
-        </View>
+        <Image source={require("../assets/images/logo-icon.png")} style={styles.logoMark} resizeMode="contain" />
         <View>
           <Text style={styles.brandName}>Saral Funding</Text>
           <Text style={styles.brandTagline}>Government funding, simplified</Text>
@@ -98,20 +96,6 @@ const styles = StyleSheet.create({
   logoMark: {
     width: 40,
     height: 40,
-    borderRadius: radius.lg,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: colors.primaryDark,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  logoText: {
-    fontSize: 21,
-    fontFamily: fonts.displayBold,
-    color: "#FFF",
   },
   brandName: {
     fontSize: 16,

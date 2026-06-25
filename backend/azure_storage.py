@@ -5,20 +5,28 @@ Environment variables:
     AZURE_ACCOUNT_NAME      — storage account name (e.g. techdomeblob)
     AZURE_CONTAINER         — container name (e.g. saralfunding-docs)
     AZURE_SAS_TOKEN         — SAS token string (without leading ?)
+
+When Azure is not configured, files are saved to LOCAL_UPLOAD_DIR (local dev fallback).
 """
 
 import os
 import uuid
 import re
-from datetime import datetime, timedelta, timezone
+import logging
+import pathlib
 
 from fastapi import HTTPException
+from fastapi.staticfiles import StaticFiles
 
 AZURE_ACCOUNT_NAME = os.environ.get("AZURE_ACCOUNT_NAME", "")
-AZURE_CONTAINER = os.environ.get("AZURE_CONTAINER", "saralfunding-docs")
-AZURE_SAS_TOKEN = os.environ.get("AZURE_SAS_TOKEN", "")
+AZURE_CONTAINER    = os.environ.get("AZURE_CONTAINER", "saralfunding-docs")
+AZURE_SAS_TOKEN    = os.environ.get("AZURE_SAS_TOKEN", "")
 
 AZURE_ENABLED = bool(AZURE_ACCOUNT_NAME and AZURE_SAS_TOKEN)
+
+# Local fallback — files saved here when Azure is not configured
+LOCAL_UPLOAD_DIR = pathlib.Path(os.environ.get("LOCAL_UPLOAD_DIR", "uploads"))
+LOCAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _get_blob_service_client():
@@ -45,11 +53,16 @@ def _slugify(text: str) -> str:
 
 
 async def upload_to_azure(file_bytes: bytes, doc_type: str, user_id: str, original_filename: str) -> dict:
-    client = _get_blob_service_client()
-
     ext = ("." + original_filename.rsplit(".", 1)[-1].lower()) if "." in original_filename else ""
     slug = _slugify(doc_type)
     blob_name = f"users/{user_id}/{slug}/{uuid.uuid4()}{ext}"
+
+    if not AZURE_ENABLED:
+        # ── Local dev fallback ──────────────────────────────────────────────
+        local_path = LOCAL_UPLOAD_DIR / blob_name.replace("/", "_")
+        local_path.write_bytes(file_bytes)
+        logging.info(f"[LOCAL] Saved upload to {local_path}")
+        return {"blob_name": blob_name, "blob_url": f"/uploads/{local_path.name}"}
 
     content_type = "application/octet-stream"
     if ext == ".pdf":
@@ -61,6 +74,7 @@ async def upload_to_azure(file_bytes: bytes, doc_type: str, user_id: str, origin
 
     try:
         from azure.storage.blob import ContentSettings
+        client = _get_blob_service_client()
         blob_client = client.get_blob_client(container=AZURE_CONTAINER, blob=blob_name)
         blob_client.upload_blob(
             file_bytes,
@@ -76,7 +90,11 @@ async def upload_to_azure(file_bytes: bytes, doc_type: str, user_id: str, origin
 
 async def delete_from_azure(blob_name: str) -> bool:
     if not AZURE_ENABLED:
-        return False
+        # Delete local fallback file
+        local_path = LOCAL_UPLOAD_DIR / blob_name.replace("/", "_")
+        if local_path.exists():
+            local_path.unlink()
+        return True
     try:
         client = _get_blob_service_client()
         client.get_blob_client(container=AZURE_CONTAINER, blob=blob_name).delete_blob()
@@ -86,11 +104,10 @@ async def delete_from_azure(blob_name: str) -> bool:
 
 
 def get_sas_url(blob_name: str, expiry_hours: int = 1) -> str:
-    """Return a direct URL using the container-level SAS token (already has read permission)."""
     if not AZURE_ENABLED:
-        raise HTTPException(
-            status_code=503,
-            detail="Azure Storage not configured.",
-        )
+        # Return full backend URL so frontend can open it directly
+        backend_base = os.environ.get("APP_BASE_URL", "http://localhost:8000")
+        local_path = LOCAL_UPLOAD_DIR / blob_name.replace("/", "_")
+        return f"{backend_base}/uploads/{local_path.name}"
     token = AZURE_SAS_TOKEN.lstrip("?")
     return f"https://{AZURE_ACCOUNT_NAME}.blob.core.windows.net/{AZURE_CONTAINER}/{blob_name}?{token}"

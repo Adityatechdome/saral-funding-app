@@ -15,8 +15,8 @@ import { apiGet } from "@/src/api";
 import { BackBar } from "@/src/components/StepBar";
 
 const STAGES = [
-  "documents_submitted",
   "call_done",
+  "documents_submitted",
   "scheme_identified",
   "application_filed",
   "under_review",

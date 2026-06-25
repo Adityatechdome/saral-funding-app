@@ -1,8 +1,13 @@
+import { useEffect, useState } from "react";
 import { Tabs } from "expo-router";
 import { View, Text, StyleSheet } from "react-native";
-import { LayoutDashboard, ClipboardList, Sparkles, CircleUser } from "lucide-react-native";
+import {
+  LayoutDashboard, ClipboardList, Sparkles, FolderOpen, CircleUser,
+  Users, CalendarDays, FileSearch,
+} from "lucide-react-native";
 
 import { colors, fonts } from "@/src/theme";
+import { apiGet } from "@/src/api";
 
 const TAB_ICON_SIZE = 22;
 
@@ -22,7 +27,7 @@ function TabIcon({ label, focused, Icon }: TabIconProps) {
           strokeWidth={focused ? 2.2 : 1.8}
         />
       </View>
-      <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
+      <Text style={[styles.tabLabel, focused && styles.tabLabelActive]} numberOfLines={1}>
         {label}
       </Text>
     </View>
@@ -30,6 +35,14 @@ function TabIcon({ label, focused, Icon }: TabIconProps) {
 }
 
 export default function TabsLayout() {
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    apiGet<any>("/auth/me")
+      .then((me) => setIsAdmin(me?.role && me.role !== "user"))
+      .catch(() => {});
+  }, []);
+
   return (
     <Tabs
       screenOptions={{
@@ -50,7 +63,11 @@ export default function TabsLayout() {
         name="applications"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Applications" focused={focused} Icon={ClipboardList} />
+            <TabIcon
+              label={isAdmin ? "Funnel" : "Applications"}
+              focused={focused}
+              Icon={isAdmin ? Users : ClipboardList}
+            />
           ),
         }}
       />
@@ -65,8 +82,25 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="advisor"
         options={{
+          href: isAdmin ? undefined : null,
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Advisor" focused={focused} Icon={Sparkles} />
+            <TabIcon
+              label="Calendly"
+              focused={focused}
+              Icon={CalendarDays}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="documents"
+        options={{
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              label={isAdmin ? "Docs" : "Documents"}
+              focused={focused}
+              Icon={isAdmin ? FileSearch : FolderOpen}
+            />
           ),
         }}
       />
@@ -108,10 +142,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primarySoft,
   },
   tabLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontFamily: fonts.medium,
     color: colors.textDim,
-    letterSpacing: 0.2,
+    letterSpacing: 0,
+    textAlign: "center",
   },
   tabLabelActive: {
     color: colors.primary,

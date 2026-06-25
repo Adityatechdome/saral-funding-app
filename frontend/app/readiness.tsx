@@ -80,7 +80,7 @@ const bar = StyleSheet.create({
 const ctaRoutes: Record<string, string> = {
   profile: "/onboarding/profile",
   business: "/onboarding/business",
-  assessment: "/onboarding/assessment",
+  assessment: "/onboarding/business",
   gst: "/onboarding/business",
   udyam: "/onboarding/business",
   documents: "/documents",

@@ -59,7 +59,7 @@ export default function ProfileScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <StepBar step={1} total={3} labels={["Your Profile", "Business Details", "Quick Assessment"]} />
+          <StepBar step={1} total={2} labels={["Your Profile", "Business Details"]} />
 
           <Text style={styles.heading}>Tell us about you</Text>
           <Text style={styles.subheading}>

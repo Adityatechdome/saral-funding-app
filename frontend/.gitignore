@@ -18,6 +18,9 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# Android local config (machine-specific, never commit)
+android/local.properties
+
 # Metro
 .metro-health-check*
 

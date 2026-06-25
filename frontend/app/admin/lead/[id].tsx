@@ -9,7 +9,7 @@ import {
   User, Phone, MapPin, Building2, DollarSign, StickyNote,
   Calendar, Clock, ArrowRight, CheckCircle2, AlertCircle,
   FileText, ChevronDown, X, Tag, Upload, Star, ExternalLink,
-  Plus, Trash2, ChevronRight,
+  Plus, Trash2, ChevronRight, Bell, Send,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts, formatINR, stageColor } from "@/src/theme";
@@ -124,6 +124,7 @@ export default function LeadDetail() {
 
   // Scheme Applications
   const [schemeApps, setSchemeApps] = useState<any[]>([]);
+  const [bankAssignments, setBankAssignments] = useState<any[]>([]);
   const [allSchemes, setAllSchemes] = useState<any[]>([]);
   const [allBanks, setAllBanks] = useState<any[]>([]);
   const [assignModal, setAssignModal] = useState(false);
@@ -133,7 +134,46 @@ export default function LeadDetail() {
   const [assigning, setAssigning] = useState(false);
   const [stageModal, setStageModal] = useState<any>(null); // {app}
   const [stageNote, setStageNote] = useState("");
+  const [selectedStage, setSelectedStage] = useState("");
   const [updatingStage, setUpdatingStage] = useState(false);
+
+  // Notification
+  const [notifTitle, setNotifTitle] = useState("");
+  const [notifBody, setNotifBody] = useState("");
+  const [sendingNotif, setSendingNotif] = useState(false);
+
+  const NOTIF_TEMPLATES = [
+    { label: "KYC Pending", title: "KYC Pending", body: "Your KYC is pending. Please complete it for faster processing." },
+    { label: "PAN Missing", title: "Document Missing", body: "Your PAN Card is missing. Please upload it to continue your application." },
+    { label: "Aadhaar Missing", title: "Document Missing", body: "Your Aadhaar Card is missing. Kindly upload it to proceed." },
+    { label: "Application Update", title: "Application Update", body: "Your funding application has been updated. Please check your status." },
+    { label: "Call Scheduled", title: "Call Scheduled", body: "Our advisor has scheduled a call with you. Please keep your phone handy." },
+  ];
+
+  const sendNotification = async () => {
+    if (!notifTitle.trim() || !notifBody.trim()) {
+      Alert.alert("Missing Fields", "Please enter both a title and message.");
+      return;
+    }
+    const userId = data?.user?.id || data?.user_id;
+    if (!userId) return;
+    setSendingNotif(true);
+    try {
+      await apiPost("/admin/notifications", {
+        title: notifTitle.trim(),
+        body: notifBody.trim(),
+        type: "platform",
+        target_user_ids: [userId],
+      });
+      setNotifTitle("");
+      setNotifBody("");
+      Alert.alert("Sent", "Notification delivered to the user.");
+    } catch {
+      Alert.alert("Error", "Failed to send notification.");
+    } finally {
+      setSendingNotif(false);
+    }
+  };
 
   const load = async () => {
     try {
@@ -144,14 +184,16 @@ export default function LeadDetail() {
       // Load docs and existing recommendation in parallel
       const userId = d.user?.id || d.user_id;
       if (userId) {
-        const [docs, apps, schemes, banks] = await Promise.all([
+        const [docs, apps, bankApps, schemes, banks] = await Promise.all([
           apiGet<any[]>(`/admin/users/${userId}/documents`).catch(() => []),
           apiGet<any[]>(`/admin/users/${userId}/scheme-applications`).catch(() => []),
+          apiGet<any[]>(`/admin/users/${userId}/bank-assignments`).catch(() => []),
           apiGet<any[]>("/schemes").catch(() => []),
           apiGet<any[]>("/banks").catch(() => []),
         ]);
         setUserDocs(Array.isArray(docs) ? docs : []);
         setSchemeApps(Array.isArray(apps) ? apps : []);
+        setBankAssignments(Array.isArray(bankApps) ? bankApps : []);
         setAllSchemes(Array.isArray(schemes) ? schemes : []);
         setAllBanks(Array.isArray(banks) ? banks : []);
       }
@@ -360,22 +402,6 @@ export default function LeadDetail() {
           </SectionCard>
         )}
 
-        {/* Recommended Schemes */}
-        {schemeMatches.length > 0 && (
-          <SectionCard title={`Recommended Schemes (${schemeMatches.length})`}>
-            {schemeMatches.slice(0, 5).map((s: any) => (
-              <View key={s.scheme_id} style={styles.schemeRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.schemeName}>{s.name}</Text>
-                  {s.reason && <Text style={styles.schemeReason} numberOfLines={2}>{s.reason}</Text>}
-                </View>
-                <View style={styles.scoreChip}>
-                  <Text style={styles.scoreText}>{s.score}%</Text>
-                </View>
-              </View>
-            ))}
-          </SectionCard>
-        )}
 
         {/* Uploaded Documents */}
         <SectionCard title={`Uploaded Documents (${userDocs.length})`}>
@@ -466,7 +492,7 @@ export default function LeadDetail() {
                 <View style={{ flexDirection: "row", gap: 6 }}>
                   <TouchableOpacity
                     style={[styles.docActionBtn, { backgroundColor: colors.primarySoft }]}
-                    onPress={() => { setStageModal(app); setStageNote(""); }}
+                    onPress={() => { setStageModal(app); setStageNote(""); setSelectedStage(app.stage || ""); }}
                   >
                     <Text style={[styles.docActionText, { color: colors.primaryDark }]}>Stage</Text>
                   </TouchableOpacity>
@@ -484,6 +510,30 @@ export default function LeadDetail() {
             <Plus size={14} color="#fff" strokeWidth={2.5} />
             <Text style={styles.assignBtnText}>Assign Scheme</Text>
           </TouchableOpacity>
+        </SectionCard>
+
+        {/* Bank Assignments */}
+        <SectionCard title={`Assigned Banks (${bankAssignments.length})`}>
+          {bankAssignments.length === 0 ? (
+            <Text style={styles.emptyNote}>No banks assigned yet. Go to Banks module to assign.</Text>
+          ) : (
+            bankAssignments.map((ba: any) => (
+              <View key={ba.id} style={styles.appRow}>
+                <View style={{ width: 28, height: 28, borderRadius: radius.md, backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Building2 size={14} color="#1D4ED8" strokeWidth={2} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.appSchemeName}>{ba.bank_name}</Text>
+                  {ba.bank_short_name ? (
+                    <Text style={styles.appBankName}>{ba.bank_short_name}</Text>
+                  ) : null}
+                </View>
+                <View style={[styles.appStagePill, { backgroundColor: "#DBEAFE" }]}>
+                  <Text style={[styles.appStageText, { color: "#1D4ED8" }]}>Assigned</Text>
+                </View>
+              </View>
+            ))
+          )}
         </SectionCard>
 
         {/* Notes + Follow-up */}
@@ -505,6 +555,53 @@ export default function LeadDetail() {
               <Text style={styles.assignedText}>Assigned to: {data.assigned_to}</Text>
             </View>
           )}
+        </SectionCard>
+
+        {/* Send Notification */}
+        <SectionCard title="Send Notification">
+          <Text style={styles.notifHint}>Quick templates</Text>
+          <View style={styles.templateRow}>
+            {NOTIF_TEMPLATES.map((t) => (
+              <TouchableOpacity
+                key={t.label}
+                style={styles.templateChip}
+                onPress={() => { setNotifTitle(t.title); setNotifBody(t.body); }}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.templateChipText}>{t.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TextInput
+            style={styles.notifInput}
+            value={notifTitle}
+            onChangeText={setNotifTitle}
+            placeholder="Notification title…"
+            placeholderTextColor={colors.textPlaceholder}
+          />
+          <TextInput
+            style={[styles.notifInput, { minHeight: 70, textAlignVertical: "top" }]}
+            value={notifBody}
+            onChangeText={setNotifBody}
+            placeholder="Write your message to the user…"
+            placeholderTextColor={colors.textPlaceholder}
+            multiline
+            numberOfLines={3}
+          />
+          <TouchableOpacity
+            style={[styles.notifSendBtn, sendingNotif && { opacity: 0.6 }]}
+            onPress={sendNotification}
+            disabled={sendingNotif}
+            activeOpacity={0.85}
+          >
+            {sendingNotif
+              ? <ActivityIndicator color="#FFF" size="small" />
+              : <>
+                  <Send size={14} color="#FFF" strokeWidth={2.5} />
+                  <Text style={styles.notifSendText}>Send Notification</Text>
+                </>
+            }
+          </TouchableOpacity>
         </SectionCard>
 
         {/* Consultation History */}
@@ -694,31 +791,28 @@ export default function LeadDetail() {
             </View>
 
             <View style={styles.stagesGrid}>
-              {["documents_submitted","call_done","scheme_identified","application_filed","under_review","approved","disbursed","rejected"].map((st) => {
+              {["call_done","documents_submitted","scheme_identified","application_filed","under_review","approved","disbursed","rejected"].map((st) => {
                 const labels: Record<string,string> = {
                   documents_submitted:"Docs Submitted", call_done:"Call Done",
                   scheme_identified:"Scheme ID'd", application_filed:"App Filed",
                   under_review:"Under Review", approved:"Approved",
                   disbursed:"Disbursed", rejected:"Rejected",
                 };
-                const isCurrent = stageModal?.stage === st;
+                const isSelected = selectedStage === st;
                 const isRej = st === "rejected";
                 return (
                   <TouchableOpacity
                     key={st}
                     style={[styles.stageChip, {
-                      borderColor: isCurrent ? colors.primary : isRej ? "#dc2626" : colors.border,
-                      backgroundColor: isCurrent ? colors.primarySoft : isRej ? "#fee2e2" : colors.surface2,
+                      borderColor: isSelected ? colors.primary : isRej ? "#dc2626" : colors.border,
+                      backgroundColor: isSelected ? colors.primarySoft : isRej ? "#fee2e2" : colors.surface2,
                     }]}
-                    onPress={() => updateAppStage(stageModal.id, st)}
+                    onPress={() => setSelectedStage(st)}
                     disabled={updatingStage}
                   >
-                    {updatingStage && isCurrent
-                      ? <ActivityIndicator size="small" color={colors.primary} />
-                      : <Text style={[styles.stageChipText, {
-                          color: isCurrent ? colors.primaryDark : isRej ? "#dc2626" : colors.text,
-                        }]}>{labels[st]}</Text>
-                    }
+                    <Text style={[styles.stageChipText, {
+                      color: isSelected ? colors.primaryDark : isRej ? "#dc2626" : colors.text,
+                    }]}>{labels[st]}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -733,6 +827,18 @@ export default function LeadDetail() {
               placeholderTextColor={colors.textPlaceholder}
               multiline
             />
+
+            <TouchableOpacity
+              style={[styles.assignBtn, { marginTop: 12, opacity: (!selectedStage || updatingStage) ? 0.5 : 1 }]}
+              disabled={!selectedStage || updatingStage}
+              onPress={() => updateAppStage(stageModal.id, selectedStage)}
+              activeOpacity={0.85}
+            >
+              {updatingStage
+                ? <ActivityIndicator color="#FFF" size="small" />
+                : <Text style={styles.assignBtnText}>Save Stage</Text>
+              }
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -875,6 +981,25 @@ const styles = StyleSheet.create({
     paddingVertical: 10, justifyContent: "center", marginTop: 12,
   },
   assignBtnText: { fontSize: 13, fontFamily: fonts.displayBold, color: "#FFF" },
+
+  // Send Notification
+  notifHint: { fontSize: 11, fontFamily: fonts.medium, color: colors.textDim, marginBottom: 8 },
+  templateRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 },
+  templateChip: {
+    paddingHorizontal: 11, paddingVertical: 6, borderRadius: radius.pill,
+    borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primarySoft,
+  },
+  templateChipText: { fontSize: 11, fontFamily: fonts.semiBold, color: colors.primaryDark },
+  notifInput: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.xl,
+    padding: 12, fontSize: 14, fontFamily: fonts.regular,
+    color: colors.text, backgroundColor: colors.surface2, marginBottom: 10,
+  },
+  notifSendBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+    backgroundColor: colors.primary, borderRadius: radius.xl, paddingVertical: 12,
+  },
+  notifSendText: { fontSize: 14, fontFamily: fonts.displayBold, color: "#FFF" },
 
   // Modal list items
   listItem: {

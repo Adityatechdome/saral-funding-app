@@ -29,6 +29,7 @@ import { apiGet, apiPost, apiDelete } from "@/src/api";
 import { getLang } from "@/src/i18n";
 import { useRouter } from "expo-router";
 import Saathi from "@/src/components/Saathi";
+import AdminConsultations from "../admin/consultations";
 
 type Msg = { role: "user" | "assistant"; content: string; structured?: any; ts?: number; followUps?: string[] };
 
@@ -61,7 +62,7 @@ const typStyles = StyleSheet.create({
   wrap: { alignItems: "flex-start", paddingHorizontal: spacing.md, paddingBottom: 8 },
 });
 
-export default function Advisor() {
+function AdvisorChat() {
   const router = useRouter();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -544,3 +545,17 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { backgroundColor: colors.primaryLight, opacity: 0.5 },
 });
+
+export default function Advisor() {
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    apiGet<any>("/auth/me")
+      .then((me: any) => setIsAdmin(me?.role && me.role !== "user"))
+      .catch(() => setIsAdmin(false));
+  }, []);
+
+  if (isAdmin === null) return null;
+  if (isAdmin) return <AdminConsultations />;
+  return <AdvisorChat />;
+}

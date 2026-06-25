@@ -15,7 +15,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000"
+        "backgroundColor": "#FFFFFF"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.techdome.saralfunding"
@@ -33,7 +33,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000"
+          "backgroundColor": "#FFFFFF"
         }
       ],
       "expo-font",
@@ -45,9 +45,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "97dd24aa-0104-4455-9e65-2fb725ac1b02"
+        "projectId": "a94d9e5f-ead0-43ba-a87b-dc0437616b68"
       }
     },
-    "owner": "aditya.techdome"
+    "owner": "pannakarasaikiran"
   }
 }

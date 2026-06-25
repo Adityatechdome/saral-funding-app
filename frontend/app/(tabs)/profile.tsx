@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -7,7 +7,9 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  Platform,
   ActivityIndicator,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -23,6 +25,21 @@ export default function Profile() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "info" | "error" } | null>(null);
+  const toastAnim = useRef(new Animated.Value(0)).current;
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((message: string, type: "info" | "error" = "info") => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ message, type });
+    Animated.spring(toastAnim, { toValue: 1, useNativeDriver: true, speed: 20 }).start();
+    toastTimer.current = setTimeout(() => {
+      Animated.timing(toastAnim, { toValue: 0, duration: 250, useNativeDriver: true }).start(() => setToast(null));
+    }, 3000);
+  }, [toastAnim]);
+
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
   // Edit form state
   const [editName, setEditName] = useState("");
   const [editDistrict, setEditDistrict] = useState("");
@@ -44,17 +61,26 @@ export default function Profile() {
   );
 
   const logout = async () => {
-    Alert.alert("Logout", "Are you sure you want to logout?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Logout",
-        style: "destructive",
-        onPress: async () => {
-          await apiLogout();
-          router.replace("/login");
-        },
-      },
-    ]);
+    const doLogout = async () => {
+      await apiLogout();
+      if (Platform.OS === "web") {
+        window.location.href = "/login";
+      } else {
+        router.replace("/login");
+      }
+    };
+
+    if (Platform.OS === "web") {
+      // Alert.alert on web maps to window.confirm which only has OK/Cancel
+      if (window.confirm("Are you sure you want to logout?")) {
+        await doLogout();
+      }
+    } else {
+      Alert.alert("Logout", "Are you sure you want to logout?", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Logout", style: "destructive", onPress: doLogout },
+      ]);
+    }
   };
 
   const saveEdits = async () => {
@@ -89,24 +115,26 @@ export default function Profile() {
     setBootstrapping(true);
     try {
       const res = await apiPost<{ message: string }>("/auth/bootstrap-admin", {});
-      // Re-fetch me so role updates immediately
       const updated = await apiGet<any>("/auth/me");
       setMe(updated);
       Alert.alert("Success ✓", res.message, [
         { text: "Go to Admin", onPress: () => router.push("/admin") },
       ]);
     } catch (e: any) {
-      Alert.alert("Failed", e.message || "Could not promote to admin. Make sure Render has finished deploying.");
+      const msg: string = e.message || "";
+      if (msg.toLowerCase().includes("super_admin already exists")) {
+        showToast("A Super Admin is already set up", "info");
+      } else {
+        Alert.alert("Failed", msg || "Could not promote to admin. Make sure the server is running.");
+      }
     } finally {
       setBootstrapping(false);
     }
   };
 
+  const isAdmin = me?.role && me.role !== "user";
   const actions = [
-    ...(me?.role && me.role !== "user"
-      ? [{ id: "admin", label: "Admin Console", Icon: Shield, onPress: () => router.push("/admin"), primary: true }]
-      : []),
-    { id: "book", label: "Book Consultation", Icon: Phone, onPress: () => router.push("/booking") },
+    ...(!isAdmin ? [{ id: "book", label: "Book Consultation", Icon: Phone, onPress: () => router.push("/booking") }] : []),
     { id: "notif", label: "Notifications", Icon: Bell, onPress: () => router.push("/notifications") },
     { id: "settings", label: "Settings", Icon: Settings, onPress: () => router.push("/settings") },
   ];
@@ -159,7 +187,7 @@ export default function Profile() {
           ) : (
             <Text style={styles.name}>{me?.full_name || "—"}</Text>
           )}
-          <Text style={styles.mobile}>+91 {me?.mobile}</Text>
+          <Text style={styles.mobile}>{me?.mobile?.startsWith("+") ? me.mobile : `+91 ${me?.mobile}`}</Text>
           <View style={styles.rolePill}>
             <ShieldCheck size={11} color={colors.primaryDark} strokeWidth={2} />
             <Text style={styles.roleText}>{me?.role === "user" ? "User" : me?.role?.replace(/_/g, " ") || "User"}</Text>
@@ -233,26 +261,6 @@ export default function Profile() {
               </TouchableOpacity>
             ))}
 
-            {(!me?.role || me.role === "user") && (
-              <TouchableOpacity
-                testID="bootstrap-admin-btn"
-                style={[styles.actionRow, { borderColor: "#FEF3C7", backgroundColor: "#FFFBEB", opacity: bootstrapping ? 0.6 : 1 }]}
-                onPress={bootstrapAdmin}
-                disabled={bootstrapping}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.actionIcon, { backgroundColor: "#FEF3C7" }]}>
-                  {bootstrapping
-                    ? <ActivityIndicator size="small" color="#92400E" />
-                    : <Shield size={16} color="#92400E" strokeWidth={2} />}
-                </View>
-                <Text style={[styles.actionLabel, { color: "#92400E" }]}>
-                  {bootstrapping ? "Connecting to server…" : "Become Admin (Dev)"}
-                </Text>
-                {!bootstrapping && <ChevronRight size={16} color="#92400E" strokeWidth={2} />}
-              </TouchableOpacity>
-            )}
-
             <TouchableOpacity
               testID="logout-btn"
               style={[styles.actionRow, styles.logoutRow]}
@@ -269,6 +277,22 @@ export default function Profile() {
 
         </View>
       </ScrollView>
+      {/* Toast */}
+      {toast && (
+        <Animated.View
+          style={[
+            styles.toast,
+            toast.type === "error" ? styles.toastError : styles.toastInfo,
+            {
+              opacity: toastAnim,
+              transform: [{ translateY: toastAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <Text style={styles.toastText}>{toast.message}</Text>
+        </Animated.View>
+      )}
     </SafeAreaView>
   );
 }
@@ -506,5 +530,30 @@ const styles = StyleSheet.create({
   },
   actionLabelPrimary: {
     color: colors.primaryDark,
+  },
+  toast: {
+    position: "absolute",
+    bottom: 24,
+    alignSelf: "center",
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  toastInfo: {
+    backgroundColor: "#1C1C1E",
+  },
+  toastError: {
+    backgroundColor: "#DC2626",
+  },
+  toastText: {
+    fontSize: 13,
+    fontFamily: fonts.semiBold,
+    color: "#FFF",
+    textAlign: "center",
   },
 });

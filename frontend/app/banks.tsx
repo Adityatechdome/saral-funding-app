@@ -46,9 +46,27 @@ export default function BanksScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      apiGet<{ recommendations: Rec[] }>("/banks/recommend/me")
-        .then((d) => { setRecs(d.recommendations || []); setLoading(false); })
-        .catch(() => setLoading(false));
+      apiGet<any[]>("/my/bank-assignments").then((myBanks) => {
+        const enriched: Rec[] = (myBanks || [])
+          .filter((a: any) => a.bank && a.bank.id)
+          .map((a: any) => ({
+            bank_id: a.bank.id,
+            name: a.bank.name || "",
+            short_name: a.bank.short_name || "",
+            type: a.bank.type || "",
+            score: 0,
+            interest_range: a.bank.interest_min != null ? `${a.bank.interest_min}%–${a.bank.interest_max}%` : "",
+            suggested_amount: a.bank.max_funding || 0,
+            collateral_required: false,
+            processing_time_days: 0,
+            supports: a.bank.supports || [],
+            why: a.bank.why || a.bank.description || "",
+            description: a.bank.description || "",
+            why_reasons: [],
+          }));
+        setRecs(enriched);
+        setLoading(false);
+      }).catch(() => setLoading(false));
     }, [])
   );
 
@@ -81,6 +99,16 @@ export default function BanksScreen() {
         )}
       </View>
 
+      {recs.length === 0 && (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 10, marginTop: -60 }}>
+          <Building2 size={40} color={colors.textDim} strokeWidth={1.5} />
+          <Text style={{ fontSize: 16, fontFamily: fonts.displayBold, color: colors.text }}>No banks assigned</Text>
+          <Text style={{ fontSize: 13, fontFamily: fonts.regular, color: colors.textMuted, textAlign: "center", paddingHorizontal: 32 }}>
+            Your advisor will assign relevant banks after your consultation.
+          </Text>
+        </View>
+      )}
+
       <FlatList
         data={recs}
         keyExtractor={(x) => x.bank_id}
@@ -112,7 +140,7 @@ export default function BanksScreen() {
                     </View>
                     <Text style={styles.interestRate}>{item.interest_range} p.a.</Text>
                   </View>
-                  <ScoreRing score={item.score} />
+                  {item.score > 0 && <ScoreRing score={item.score} />}
                 </View>
 
                 <Text style={styles.whyText} numberOfLines={2}>{item.why}</Text>

@@ -9,8 +9,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
-  Users, Phone, Target, Landmark,
-  TrendingUp, MessageSquare, ChevronRight, Percent, Eye, Settings, Shield,
+  Users, Phone, Target, Landmark, FolderOpen,
+  TrendingUp, MessageSquare, ChevronRight, Percent, Eye, Settings, Shield, Bell, BarChart2,
 } from "lucide-react-native";
 
 import { colors, spacing, radius, fonts } from "@/src/theme";
@@ -27,11 +27,15 @@ type Overview = {
 };
 
 const ALL_MODULES = [
-  { id: "users", label: "Users", sub: "Manage & view", Icon: Users, color: colors.primarySoft, iconColor: colors.primaryDark },
-  { id: "consultations", label: "Consultations", sub: "Track & update", Icon: Phone, color: "#EDE9FE", iconColor: "#5B21B6" },
-  { id: "leads", label: "CRM / Leads", sub: "Pipeline & stages", Icon: Target, color: "#FEF3C7", iconColor: "#92400E" },
-  { id: "team", label: "Team Members", sub: "Invite & manage roles", Icon: Shield, color: "#DCFCE7", iconColor: "#15803D" },
-  { id: "settings", label: "Settings", sub: "App configuration", Icon: Settings, color: "#F5F3FF", iconColor: "#6D28D9" },
+  { id: "users",         label: "Users",          sub: "Manage & view",         Icon: Users,     color: colors.primarySoft, iconColor: colors.primaryDark },
+  { id: "consultations", label: "Consultations",  sub: "Track & update",        Icon: Phone,     color: "#EDE9FE", iconColor: "#5B21B6" },
+  { id: "leads",         label: "CRM / Leads",    sub: "Pipeline & stages",     Icon: Target,    color: "#FEF3C7", iconColor: "#92400E" },
+  { id: "schemes",       label: "Schemes",         sub: "Enable & disable",      Icon: Landmark,  color: "#FFF7ED", iconColor: "#C2410C" },
+  { id: "documents",    label: "Documents",       sub: "Review & approve docs", Icon: FolderOpen, color: "#F0FDF4", iconColor: "#15803D" },
+  { id: "analytics",    label: "Analytics",       sub: "Charts & trends",       Icon: BarChart2, color: "#DBEAFE", iconColor: "#1D4ED8" },
+  { id: "notifications",label: "Notifications",   sub: "Broadcast to all users",Icon: Bell,      color: "#FEF3C7", iconColor: "#B45309" },
+  { id: "team",          label: "Team Members",   sub: "Invite & manage roles", Icon: Shield,    color: "#DCFCE7", iconColor: "#15803D" },
+  { id: "settings",     label: "Settings",        sub: "App configuration",     Icon: Settings,  color: "#F5F3FF", iconColor: "#6D28D9" },
 ];
 
 function StatCard({ label, value, Icon, color, iconColor }: { label: string; value: string; Icon: any; color: string; iconColor: string }) {
